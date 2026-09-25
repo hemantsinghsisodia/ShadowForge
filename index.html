@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#07080e" />
+    <meta name="description" content="SHADOWFORGE — Shape the darkness. Change the world." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>SHADOWFORGE</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #07080e; color: #e7eef8; }
+      body { overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
+      canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      #ui { position: fixed; inset: 0; pointer-events: none; }
+      #boot, #nosupport {
+        position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+        background: radial-gradient(ellipse at 50% 30%, #142033, #07080e 70%);
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      #boot[hidden], #nosupport[hidden] { display: none; }
+      .boot-card { width: min(28rem, 92vw); text-align: center; }
+      .eyebrow { letter-spacing: 0.28em; text-transform: uppercase; color: #8aa0b8; font-size: 0.72rem; }
+      h1 { font-weight: 600; letter-spacing: 0.18em; margin: 0.2rem 0; }
+      .tag { color: #9eb4c8; }
+      .bar { margin: 1.4rem auto 0.6rem; height: 4px; width: 100%; background: #1c2433; }
+      #boot-fill { height: 100%; width: 8%; background: linear-gradient(90deg, #3ee0ff, #ffb15a); }
+      #boot-status { color: #8aa0b8; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <div id="boot">
+      <div class="boot-card">
+        <p class="eyebrow">Experimental optics lab</p>
+        <h1>SHADOWFORGE</h1>
+        <p class="tag">Shape the darkness. Change the world.</p>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="boot-fill"></div>
+        </div>
+        <p id="boot-status">Loading…</p>
+      </div>
+    </div>
+    <div id="nosupport" hidden>
+      <div class="boot-card">
+        <h1>SHADOWFORGE</h1>
+        <p>
+          Your browser does not support the graphics required by SHADOWFORGE. Please use a modern
+          browser with WebGL enabled.
+        </p>
+      </div>
+    </div>
+    <canvas id="game"></canvas>
+    <div id="ui"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
