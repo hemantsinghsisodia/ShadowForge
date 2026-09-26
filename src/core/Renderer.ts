@@ -7,6 +7,7 @@ import {
   WebGLRenderer,
   type Scene,
   type Camera,
+  type ShaderMaterial,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
@@ -69,7 +70,19 @@ export class Renderer {
     const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(scene, camera));
     if (profile.bloom) {
-      composer.addPass(new UnrealBloomPass(new Vector2(this.width, this.height), 0.12, 0.4, 0.94));
+      const bloom = new UnrealBloomPass(new Vector2(this.width, this.height), 0.12, 0.4, 0.94);
+      const high = (bloom as unknown as { materialHighPassFilter: ShaderMaterial }).materialHighPassFilter;
+      high.fragmentShader = high.fragmentShader.replace(
+        'vec4 texel = texture2D( tDiffuse, vUv );',
+        `vec4 texel = texture2D( tDiffuse, vUv );
+        texel.rgb = vec3(
+          texel.r == texel.r ? texel.r : 0.0,
+          texel.g == texel.g ? texel.g : 0.0,
+          texel.b == texel.b ? texel.b : 0.0);
+        texel.rgb = min(max(texel.rgb, vec3(0.0)), vec3(64.0));`,
+      );
+      high.needsUpdate = true;
+      composer.addPass(bloom);
     }
     if (profile.postFx) {
       this.grade = new ShaderPass(gradeShader);

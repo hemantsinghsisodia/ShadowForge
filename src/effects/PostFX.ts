@@ -20,6 +20,11 @@ export const gradeShader = {
     uniform float amount;
     void main() {
       vec4 texel = texture2D(tDiffuse, vUv);
+      texel.rgb = vec3(
+        texel.r == texel.r ? texel.r : 0.0,
+        texel.g == texel.g ? texel.g : 0.0,
+        texel.b == texel.b ? texel.b : 0.0);
+      texel.rgb = min(max(texel.rgb, vec3(0.0)), vec3(64.0));
       vec2 uv = vUv - 0.5;
       float vig = smoothstep(0.88, 0.3, length(uv * vec2(1.2, 1.05)));
       float grain = fract(sin(dot(vUv + fract(time * 0.37), vec2(12.9898, 78.233))) * 43758.5453);

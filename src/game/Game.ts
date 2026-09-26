@@ -131,6 +131,14 @@ export class Game {
             climb: box.climbable,
           })),
         fps: () => Math.round(this.monitor.fps),
+        post: (mode: 'off' | 'bloom' | 'grade' | 'full') => {
+          const profile = profileFor(this.tier, isCoarsePointer());
+          this.renderer.setPresentation(
+            { ...profile, bloom: mode === 'bloom' || mode === 'full', postFx: mode === 'grade' || mode === 'full' },
+            this.scene,
+            this.camera.camera,
+          );
+        },
       };
     }
     if (!localStorage.getItem('shadowforge-tutorial')) {

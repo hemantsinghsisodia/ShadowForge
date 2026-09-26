@@ -219,12 +219,12 @@ export class LevelWorld {
       if (!view) continue;
       const volume = resolveLight(cfg, shadows.states[cfg.id] ?? cfg.initial);
       view.group.position.set(volume.x, volume.y, volume.z);
-      view.pole.scale.y = Math.max(0.35, volume.y);
+      view.pole.scale.y = Math.max(0.4, volume.y) - 0.09;
       view.pole.position.y = -view.pole.scale.y / 2;
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
-      const emissive = view.head.material as MeshStandardMaterial;
-      emissive.emissiveIntensity = volume.enabled ? 1.15 : 0.08;
+      const headMat = view.head.material as MeshBasicMaterial;
+      headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 1.4 : 0.12);
       const dir =
         view.target && volume.spot
           ? new Vector3(volume.spot.dx, volume.spot.dy, volume.spot.dz)
@@ -407,9 +407,10 @@ export class LevelWorld {
     const group = new Group();
     const pole = new Mesh(new CylinderGeometry(0.06, 0.08, 1, 8), lampMat);
     pole.castShadow = true;
+    const lampColor = new Color(cfg.color);
     const head = new Mesh(
       new BoxGeometry(0.34, 0.18, 0.34),
-      new MeshStandardMaterial({ color: cfg.color, emissive: new Color(cfg.color), emissiveIntensity: 1.4, roughness: 0.35 }),
+      new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
     );
     head.castShadow = true;
     let beam: Mesh | null = null;
@@ -423,7 +424,7 @@ export class LevelWorld {
       light = spot;
       beam = new Mesh(
         new ConeGeometry(0.16, 0.5, 10),
-        new MeshStandardMaterial({ color: cfg.color, emissive: new Color(cfg.color), emissiveIntensity: 0.6, roughness: 0.4 }),
+        new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
       );
       group.add(beam);
     } else {
@@ -431,7 +432,7 @@ export class LevelWorld {
     }
     const glow = createBeam(new Color(cfg.color));
     group.add(pole, head, light, glow.cone, glow.halo);
-    pole.scale.y = Math.max(0.4, cfg.position[1]);
+    pole.scale.y = Math.max(0.4, cfg.position[1]) - 0.09;
     pole.position.y = -pole.scale.y / 2;
     return { cfg, group, pole, head, beam, glow, light, target };
   }

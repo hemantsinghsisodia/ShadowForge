@@ -10,6 +10,7 @@ interface ShadowforgeDebug {
   drive: (x: number, z: number, ms: number) => Promise<unknown>;
   boxes: () => unknown;
   fps: () => number;
+  post: (mode: 'off' | 'bloom' | 'grade' | 'full') => void;
 }
 
 declare global {
