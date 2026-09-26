@@ -34,7 +34,7 @@ import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { buildDressing, type RoomBounds } from './LabDressing';
-import { accentFor, buildEnvMap, createLabMaterials } from './Materials';
+import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
 interface LampView {
   cfg: LightConfig;
@@ -96,6 +96,7 @@ export class LevelWorld {
 
   bindRenderer(renderer: WebGLRenderer): void {
     this.gl = renderer;
+    lab.setAnisotropy(renderer.capabilities.getMaxAnisotropy());
     this.ensureEnv();
   }
 
@@ -141,7 +142,7 @@ export class LevelWorld {
     let minZ = Infinity;
     let maxZ = -Infinity;
     for (const platform of config.platforms) {
-      const mesh = new Mesh(new BoxGeometry(platform.size[0], platform.size[1], platform.size[2]), floorMat);
+      const mesh = new Mesh(worldUvBox(platform.size[0], platform.size[1], platform.size[2], 2), floorMat);
       mesh.position.set(platform.position[0], platform.position[1], platform.position[2]);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -523,7 +524,7 @@ export class LevelWorld {
   }
 
   private buildMenu(): void {
-    const floor = new Mesh(new BoxGeometry(9, 0.4, 6), floorMat);
+    const floor = new Mesh(worldUvBox(9, 0.4, 6, 2), floorMat);
     floor.position.y = -0.2;
     floor.receiveShadow = true;
     const monument = new Mesh(new BoxGeometry(0.72, 1.7, 0.72), stone);

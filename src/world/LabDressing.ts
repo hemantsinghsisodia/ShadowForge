@@ -1,5 +1,5 @@
 import { BackSide, BoxGeometry, Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, SphereGeometry } from 'three';
-import type { LabMaterials } from './Materials';
+import { worldUvBox, type LabMaterials } from './Materials';
 
 export interface RoomBounds {
   minX: number;
@@ -54,7 +54,7 @@ export function buildDressing(bounds: RoomBounds, detail: 'low' | 'high', mats: 
       [midX, wallH / 2, maxZ + 0.3, width, wallH, 0.12],
     ];
     for (const [x, y, z, w, h, d] of panels) {
-      const panel = new Mesh(new BoxGeometry(w, h, d), mats.wall);
+      const panel = new Mesh(worldUvBox(w, h, d, 2), mats.wall);
       panel.position.set(x, y, z);
       panel.receiveShadow = true;
       root.add(panel);

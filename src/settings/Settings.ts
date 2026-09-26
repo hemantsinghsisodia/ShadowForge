@@ -73,6 +73,8 @@ export interface QualityProfile {
   postFx: boolean;
   playerLight: boolean;
   dressingDetail: 'low' | 'high';
+  /** Multisample count for the post-processing buffer. 0 on Low, which has no composer. */
+  msaa: number;
 }
 
 export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfile {
@@ -91,6 +93,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       postFx: false,
       playerLight: false,
       dressingDetail: 'low',
+      msaa: 0,
     };
   }
   if (tier === 'medium') {
@@ -108,6 +111,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       postFx: true,
       playerLight: true,
       dressingDetail: 'high',
+      msaa: coarse ? 2 : 4,
     };
   }
   return {
@@ -124,5 +128,6 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     postFx: true,
     playerLight: true,
     dressingDetail: 'high',
+    msaa: 4,
   };
 }

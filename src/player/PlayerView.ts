@@ -2,15 +2,21 @@ import {
   CanvasTexture,
   CapsuleGeometry,
   Group,
+  LoopOnce,
+  LoopRepeat,
   Mesh,
   MeshStandardMaterial,
   PointLight,
+  Quaternion,
   RepeatWrapping,
   SphereGeometry,
   SRGBColorSpace,
+  Vector3,
+  type AnimationAction,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { CharacterBody } from '../physics/CharacterBody';
+import { loadHumanModel, type HumanClip, type HumanModel } from './HumanModel';
 
 /** Real-size suit, scaled so the figure matches the 1.15 m collision body. */
 const SUIT_SCALE = 0.66;
@@ -54,6 +60,15 @@ export class PlayerView {
   private phase = 0;
   private time = 0;
   private interact = 0;
+  private human: HumanModel | null = null;
+  private currentAction: AnimationAction | null = null;
+  private humanInteract = false;
+  private interactPulse = false;
+  private jumpPhase: 'up' | 'air' | 'land' | null = null;
+  private landLeft = 0;
+  private wasGrounded = true;
+  private readonly armLiftL = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -1.15);
+  private readonly armLiftR = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 1.15);
 
   constructor() {
     const cloth = new MeshStandardMaterial({
@@ -158,6 +173,16 @@ export class PlayerView {
     this.lamp = new PointLight(0xffe2c0, 0, 6, 2);
     this.lamp.position.y = 0.35;
     this.group.add(this.rig, this.lamp);
+    void loadHumanModel().then((human) => {
+      if (!human) return;
+      this.human = human;
+      this.rig.visible = false;
+      this.group.add(human.object);
+      human.mixer.addEventListener('finished', (event) => {
+        const action = (event as { action?: AnimationAction }).action;
+        if (action && action === human.action('interact')) this.humanInteract = false;
+      });
+    });
   }
 
   setLamp(on: boolean): void {
@@ -167,6 +192,8 @@ export class PlayerView {
 
   pulseInteract(): void {
     this.interact = 0.35;
+    this.humanInteract = true;
+    this.interactPulse = true;
   }
 
   update(dt: number, body: CharacterBody): void {
@@ -174,6 +201,10 @@ export class PlayerView {
     this.group.rotation.y = body.facing;
     this.time += dt;
     const speed = Math.hypot(body.vx, body.vz);
+    if (this.human) {
+      this.updateHuman(dt, body, speed);
+      return;
+    }
     const moving = body.grounded && speed > 0.35;
     if (moving) this.phase += dt * Math.min(speed, 6) * 2.1;
     this.interact = Math.max(0, this.interact - dt);
@@ -255,6 +286,81 @@ export class PlayerView {
     this.pelvis.position.y = hipDrop;
     this.shoulderL.rotation.z = -0.14;
     this.shoulderR.rotation.z = 0.14;
+  }
+
+  private updateHuman(dt: number, body: CharacterBody, speed: number): void {
+    const human = this.human;
+    if (!human) return;
+    const airborne = !body.grounded && !body.climbing;
+    if (this.wasGrounded && airborne && body.vy > 0.2) this.jumpPhase = 'up';
+    else if (this.jumpPhase === 'up' && airborne && body.vy <= 0.2) this.jumpPhase = 'air';
+    else if (this.jumpPhase && this.jumpPhase !== 'land' && !airborne) {
+      this.jumpPhase = 'land';
+      this.landLeft = 0.32;
+    }
+    if (this.jumpPhase === 'land') {
+      this.landLeft -= dt;
+      if (this.landLeft <= 0) this.jumpPhase = null;
+    }
+    this.wasGrounded = body.grounded;
+
+    let kind: HumanClip = 'idle';
+    let clipSpeed = 1;
+    let once = false;
+    if (this.humanInteract) {
+      kind = 'interact';
+      once = true;
+    } else if (body.climbing) {
+      kind = 'climb';
+      clipSpeed = human.hasClimb ? 1 : 0.55;
+    } else if (this.jumpPhase === 'up') {
+      kind = 'jump';
+      once = human.dedicated('jump');
+    } else if (this.jumpPhase === 'air') {
+      kind = 'jumpIdle';
+    } else if (this.jumpPhase === 'land') {
+      kind = 'jumpLand';
+      once = human.dedicated('jumpLand');
+    } else if (body.grounded && speed > 3) {
+      kind = 'run';
+      clipSpeed = Math.min(1.45, Math.max(0.75, speed / 3.2));
+    } else if (body.grounded && speed > 0.35) {
+      kind = 'walk';
+      clipSpeed = Math.min(1.45, Math.max(0.75, speed / 1.6));
+    }
+
+    this.playHuman(kind, clipSpeed, once);
+    human.mixer.update(dt);
+    if (body.climbing && !human.hasClimb) {
+      human.armL?.quaternion.multiply(this.armLiftL);
+      human.armR?.quaternion.multiply(this.armLiftR);
+    }
+  }
+
+  private playHuman(kind: HumanClip, speed: number, once: boolean): void {
+    const human = this.human;
+    if (!human) return;
+    const action = human.action(kind);
+    if (!action) return;
+    const restart = this.interactPulse && kind === 'interact';
+    if (restart) this.interactPulse = false;
+    if (!restart && this.currentAction === action) {
+      action.setEffectiveTimeScale(speed);
+      return;
+    }
+    const previous = this.currentAction;
+    action.reset();
+    action.setLoop(once ? LoopOnce : LoopRepeat, once ? 1 : Infinity);
+    action.clampWhenFinished = once;
+    action.setEffectiveTimeScale(speed);
+    action.enabled = true;
+    if (previous && previous !== action) {
+      previous.fadeOut(0.2);
+      action.setEffectiveWeight(1).fadeIn(0.2).play();
+    } else {
+      action.setEffectiveWeight(1).play();
+    }
+    this.currentAction = action;
   }
 
   private pivot(x: number, y: number, z = 0): Group {

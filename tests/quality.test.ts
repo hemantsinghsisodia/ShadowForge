@@ -13,6 +13,7 @@ describe('quality profiles', () => {
     expect(profile.playerLight).toBe(true);
     expect(profile.dressingDetail).toBe('high');
     expect(profile.dprCap).toBe(1.5);
+    expect(profile.msaa).toBe(4);
   });
 
   it('starts AUTO on HIGH for phones and desktops', () => {

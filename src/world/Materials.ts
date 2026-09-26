@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   CanvasTexture,
   Color,
   MeshStandardMaterial,
@@ -128,13 +129,40 @@ export interface LabMaterials {
   nodeHot: MeshStandardMaterial;
   shared: Set<import('three').Material>;
   applyEnv(texture: Texture | null): void;
+  setAnisotropy(max: number): void;
+}
+
+/**
+ * Box whose texture repeats by real size, so a thin face is not squashed into dense lines.
+ * Face order matches BoxGeometry: +x, -x, +y, -y, +z, -z.
+ */
+export function worldUvBox(width: number, height: number, depth: number, tile: number): BoxGeometry {
+  const geometry = new BoxGeometry(width, height, depth);
+  const uv = geometry.getAttribute('uv');
+  const spans: [number, number][] = [
+    [depth, height],
+    [depth, height],
+    [width, depth],
+    [width, depth],
+    [width, height],
+    [width, height],
+  ];
+  const perFace = uv.count / spans.length;
+  for (let face = 0; face < spans.length; face++) {
+    const repeatU = spans[face][0] / tile;
+    const repeatV = spans[face][1] / tile;
+    for (let i = 0; i < perFace; i++) {
+      const index = face * perFace + i;
+      uv.setXY(index, uv.getX(index) * repeatU, uv.getY(index) * repeatV);
+    }
+  }
+  uv.needsUpdate = true;
+  return geometry;
 }
 
 export function createLabMaterials(): LabMaterials {
   const floorTex = floorMap();
-  floorTex.repeat.set(2, 2);
   const wallTex = wallMap();
-  wallTex.repeat.set(1.5, 1);
   const metal = metalMap();
   const floor = new MeshStandardMaterial({
     map: floorTex,
@@ -185,6 +213,17 @@ export function createLabMaterials(): LabMaterials {
     applyEnv(texture) {
       for (const material of all) material.envMap = texture;
       for (const material of all) material.needsUpdate = true;
+    },
+    setAnisotropy(max) {
+      const value = Math.min(8, Math.max(1, max));
+      const seen = new Set<Texture>();
+      for (const material of all) {
+        for (const tex of [material.map, material.roughnessMap]) {
+          if (!tex || seen.has(tex)) continue;
+          seen.add(tex);
+          tex.anisotropy = value;
+        }
+      }
     },
   };
 }

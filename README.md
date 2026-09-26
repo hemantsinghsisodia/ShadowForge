@@ -101,7 +101,7 @@ src/
   levels/              Level data (Level1–Level10), helpers, shared evaluation
   shadows/             Shadow grid math, ShadowManager, forge plate shader
   physics/             Kinematic character controller
-  player/              Robot model and third-person camera
+  player/              Player model and third-person camera
   world/               Builds each level's meshes, lights and consoles
   effects/             Particles
   audio/               Synthesized Web Audio effects and haptics
@@ -142,3 +142,7 @@ Add `?debug=1` to the URL to unlock all levels and expose `window.__SF` in the b
 `npm run build` writes a static site to `dist/`. Vite is configured with `base: './'`, so the folder works on any static host, including Vercel, Netlify, Cloudflare Pages and GitHub Pages.
 
 If the browser can't create a WebGL context, the game shows a message asking for a modern browser with WebGL enabled.
+
+## Credits
+
+The player is the Spacesuit character from Quaternius' [Ultimate Modular Men Pack](https://quaternius.com/packs/ultimatemodularcharacters.html), used under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).

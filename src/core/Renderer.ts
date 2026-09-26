@@ -1,7 +1,9 @@
 import {
   ACESFilmicToneMapping,
+  HalfFloatType,
   PCFSoftShadowMap,
   SRGBColorSpace,
+  WebGLRenderTarget,
   WebGLRenderer,
   type Scene,
   type Camera,
@@ -57,12 +59,14 @@ export class Renderer {
   /** Bloom plus the vignette grade. Either one turns the composer on. */
   setPresentation(profile: QualityProfile, scene: Scene, camera: Camera): void {
     this.bloomScale = profile.bloom ? profile.bloomScale : 1;
+    this.composer?.dispose();
     if (!profile.bloom && !profile.postFx) {
       this.composer = null;
       this.grade = null;
       return;
     }
-    const composer = new EffectComposer(this.renderer);
+    const target = new WebGLRenderTarget(this.width, this.height, { type: HalfFloatType });
+    const composer = new EffectComposer(this.renderer, target);
     composer.addPass(new RenderPass(scene, camera));
     if (profile.bloom) {
       composer.addPass(new UnrealBloomPass(new Vector2(this.width, this.height), 0.12, 0.4, 0.94));
@@ -76,6 +80,16 @@ export class Renderer {
     composer.addPass(new OutputPass());
     this.composer = composer;
     this.resize();
+    const dpr = this.renderer.getPixelRatio();
+    const samples = Math.min(dpr >= 2 ? Math.min(profile.msaa, 2) : profile.msaa, this.renderer.capabilities.maxSamples);
+    if (samples > 0) {
+      // The grade pass and the output pass each swap buffers once, so every frame starts on the multisampled buffer.
+      const current = composer.renderTarget2;
+      const sampled = new WebGLRenderTarget(current.width, current.height, { type: HalfFloatType, samples });
+      current.dispose();
+      composer.renderTarget2 = sampled;
+      composer.readBuffer = sampled;
+    }
   }
 
   render(scene: Scene, camera: Camera): void {
