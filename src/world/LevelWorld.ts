@@ -1,17 +1,19 @@
 import {
+  AdditiveBlending,
   BoxGeometry,
   BufferGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
   FogExp2,
   Group,
   HemisphereLight,
   Line,
   LineBasicMaterial,
-  Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   PointLight,
@@ -19,13 +21,20 @@ import {
   TorusGeometry,
   Vector3,
   type Scene,
+  type Texture,
+  type WebGLRenderer,
 } from 'three';
+import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
+import { createObsidianMaterial } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
+import type { QualityProfile } from '../settings/Settings';
 import type { CasterVolume } from '../shadows/types';
 import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
+import { buildDressing, type RoomBounds } from './LabDressing';
+import { accentFor, buildEnvMap, createLabMaterials } from './Materials';
 
 interface LampView {
   cfg: LightConfig;
@@ -33,34 +42,19 @@ interface LampView {
   pole: Mesh;
   head: Mesh;
   beam: Mesh | null;
+  glow: BeamView;
   light: PointLight | SpotLight;
   target: Object3D | null;
 }
 
-const sharedMaterials = new Set<Material>();
-
-const stone = new MeshStandardMaterial({ color: 0x6e7684, metalness: 0.25, roughness: 0.55 });
-const floorMat = new MeshStandardMaterial({ color: 0x161b27, metalness: 0.42, roughness: 0.68 });
-const trimMat = new MeshStandardMaterial({ color: 0x123846, emissive: 0x14586e, emissiveIntensity: 0.8, roughness: 0.4 });
-const lampMat = new MeshStandardMaterial({ color: 0xd8dee8, metalness: 0.8, roughness: 0.25 });
-const nodeMat = new MeshStandardMaterial({ color: 0x8ee9ff, emissive: 0x39d7ff, emissiveIntensity: 0.8, roughness: 0.3 });
-const nodeHot = new MeshStandardMaterial({ color: 0xffd2a1, emissive: 0xffb15a, emissiveIntensity: 1.3, roughness: 0.3 });
-const solidMat = new MeshStandardMaterial({
-  color: 0xb8fbff,
-  emissive: 0x147a90,
-  emissiveIntensity: 0.45,
-  roughness: 0.28,
-  metalness: 0.15,
-  transparent: true,
-  opacity: 0.9,
-});
-sharedMaterials.add(stone);
-sharedMaterials.add(floorMat);
-sharedMaterials.add(trimMat);
-sharedMaterials.add(lampMat);
-sharedMaterials.add(nodeMat);
-sharedMaterials.add(nodeHot);
-sharedMaterials.add(solidMat);
+const lab = createLabMaterials();
+const sharedMaterials = lab.shared;
+const stone = lab.stone;
+const floorMat = lab.floor;
+const trimMat = lab.trim;
+const lampMat = lab.lamp;
+const nodeMat = lab.node;
+const nodeHot = lab.nodeHot;
 
 export class LevelWorld {
   readonly root = new Group();
@@ -74,8 +68,18 @@ export class LevelWorld {
   private readonly guides = new Group();
   private readonly solidGroup = new Group();
   private exit: Mesh | null = null;
+  private column: Mesh | null = null;
   private sun: DirectionalLight | null = null;
   private config: LevelConfig | null = null;
+  private dressing: Group | null = null;
+  private bounds: RoomBounds | null = null;
+  private accent = new Color(0x5ce1ff);
+  private beamsOn = true;
+  private dressingDetail: 'low' | 'high' = 'high';
+  private gl: WebGLRenderer | null = null;
+  private env: Texture | null = null;
+  private profile: QualityProfile | null = null;
+  private solidLayout = '';
   time = 0;
 
   constructor(private scene: Scene) {
@@ -90,11 +94,41 @@ export class LevelWorld {
     this.root.visible = !on;
   }
 
+  bindRenderer(renderer: WebGLRenderer): void {
+    this.gl = renderer;
+    this.ensureEnv();
+  }
+
+  applyProfile(profile: QualityProfile): void {
+    const detailChanged = this.dressingDetail !== profile.dressingDetail;
+    this.profile = profile;
+    this.beamsOn = profile.beams;
+    this.dressingDetail = profile.dressingDetail;
+    if (profile.envMap) {
+      this.ensureEnv();
+      if (this.env) {
+        lab.applyEnv(this.env);
+        this.scene.environment = this.env;
+        this.scene.environmentIntensity = 0.28;
+      }
+    } else {
+      this.scene.environment = null;
+      lab.applyEnv(null);
+    }
+    if (detailChanged && this.bounds) this.mountDressing();
+  }
+
+  pulseForge(id: string): void {
+    this.forges.find((forge) => forge.def.id === id)?.pulse();
+  }
+
   load(config: LevelConfig, shadowMapSize: number): void {
     this.clearLevel();
     this.config = config;
-    this.scene.background = new Color(0x07080e);
-    this.scene.fog = new FogExp2(0x07080e, config.id >= 8 ? 0.02 : 0.035);
+    this.accent = accentFor(config.id);
+    const fog = new Color(0x07080e).lerp(this.accent, 0.16);
+    this.scene.background = fog;
+    this.scene.fog = new FogExp2(fog, config.id >= 8 ? 0.016 : 0.028);
     const hemi = new HemisphereLight(0xb7c6dc, 0x243044, 2.1);
     this.root.add(hemi);
     this.sun = new DirectionalLight(0xe7eef8, 4.5);
@@ -123,7 +157,8 @@ export class LevelWorld {
       minZ = Math.min(minZ, platform.position[2] - platform.size[2] / 2);
       maxZ = Math.max(maxZ, platform.position[2] + platform.size[2] / 2);
     }
-    this.dress(minX, maxX, minZ, maxZ);
+    this.bounds = { minX, maxX, minZ, maxZ };
+    this.mountDressing();
 
     for (const cfg of config.lights) {
       const view = this.makeLamp(cfg);
@@ -154,9 +189,20 @@ export class LevelWorld {
     ring.position.set(config.exit.position[0], config.exit.position[1] + 0.08, config.exit.position[2]);
     this.exit = ring;
     this.root.add(ring);
-    const pit = new Mesh(new BoxGeometry(Math.max(40, maxX - minX + 30), 0.2, Math.max(20, maxZ - minZ + 20)), floorMat);
-    pit.position.set((minX + maxX) / 2, -8, (minZ + maxZ) / 2);
-    this.root.add(pit);
+    const column = new Mesh(
+      new CylinderGeometry(0.08, 0.42, 3.4, 12, 1, true),
+      new MeshBasicMaterial({
+        color: 0x7dffe1,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        side: DoubleSide,
+        blending: AdditiveBlending,
+      }),
+    );
+    column.position.set(config.exit.position[0], 1.8, config.exit.position[2]);
+    this.column = column;
+    this.root.add(column);
   }
 
   sync(shadows: ShadowManager): void {
@@ -171,7 +217,12 @@ export class LevelWorld {
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
       const emissive = view.head.material as MeshStandardMaterial;
-      emissive.emissiveIntensity = volume.enabled ? 1.4 : 0.12;
+      emissive.emissiveIntensity = volume.enabled ? 1.15 : 0.08;
+      const dir =
+        view.target && volume.spot
+          ? new Vector3(volume.spot.dx, volume.spot.dy, volume.spot.dz)
+          : new Vector3(0, -1, 0.05);
+      aimBeam(view.glow, dir, Math.min(volume.range, 9), volume.enabled && this.beamsOn ? 1 : 0);
       if (view.target && volume.spot) {
         view.target.position.set(volume.spot.dx * 5, volume.spot.dy * 5, volume.spot.dz * 5);
         if (view.beam) view.beam.quaternion.setFromUnitVectors(new Vector3(0, -1, 0), new Vector3(volume.spot.dx, volume.spot.dy, volume.spot.dz).normalize());
@@ -242,23 +293,53 @@ export class LevelWorld {
     cam.updateProjectionMatrix();
   }
 
-  update(dt: number): void {
+  update(dt: number, px = 0, pz = 0): void {
     this.time += dt;
     if (this.exit) this.exit.rotation.z = this.time * 0.6;
+    if (this.column) {
+      const mat = this.column.material as MeshBasicMaterial;
+      mat.opacity = 0.16 + Math.sin(this.time * 2.2) * 0.08;
+      this.column.scale.y = 1 + Math.sin(this.time * 1.6) * 0.04;
+    }
     for (const console of this.consoles) {
       const button = console.group.children[1] as Mesh;
+      const ring = console.group.children[2] as Mesh;
+      const dist = Math.hypot(console.group.position.x - px, console.group.position.z - pz);
+      const near = dist < 3.2;
       const mat = button.material as MeshStandardMaterial;
-      mat.emissiveIntensity = 0.7 + Math.sin(this.time * 3) * 0.45;
+      mat.emissiveIntensity = near ? 1.3 + Math.sin(this.time * 8) * 0.55 : 0.65 + Math.sin(this.time * 3) * 0.3;
+      if (ring) ring.rotation.y = this.time * (near ? 2.2 : 0.7);
     }
-    this.menu.rotation.y = this.time * 0.15;
+    this.menu.rotation.y = Math.sin(this.time * 0.15) * 0.18;
     for (const forge of this.forges) forge.setTime(this.time);
   }
 
   private rebuildSolid(shadows: ShadowManager): void {
+    const chunks: string[] = [];
+    const stabs = new Map<string, number>();
+    for (const [id, frozen] of shadows.solid) {
+      const stab = shadows.stability.get(id);
+      if (!stab?.forged) continue;
+      chunks.push(`${id}:${frozen.join('')}`);
+      stabs.set(id, stab.value);
+    }
+    const layout = chunks.join('|');
+    if (layout === this.solidLayout) {
+      for (const child of this.solidGroup.children) {
+        const mesh = child as Mesh;
+        const material = mesh.material as { uniforms?: { stab?: { value: number } } };
+        const value = stabs.get(mesh.userData.surfaceId as string);
+        if (value !== undefined && material.uniforms?.stab) material.uniforms.stab.value = value;
+      }
+      return;
+    }
+    this.solidLayout = layout;
     for (const child of [...this.solidGroup.children]) {
       this.solidGroup.remove(child);
       const mesh = child as Mesh;
       mesh.geometry.dispose();
+      const material = mesh.material;
+      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
     }
     for (const [id, frozen] of shadows.solid) {
       const def = shadows.defs.get(id);
@@ -268,8 +349,9 @@ export class LevelWorld {
         const width = Math.max(0.05, box.maxX - box.minX);
         const height = Math.max(0.08, box.maxY - box.minY);
         const depth = Math.max(0.05, box.maxZ - box.minZ);
-        const mesh = new Mesh(new BoxGeometry(width, height, depth), solidMat);
+        const mesh = new Mesh(new BoxGeometry(width, height, depth), createObsidianMaterial(stab.value, this.accent));
         mesh.position.set((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2, (box.minZ + box.maxZ) / 2);
+        mesh.userData.surfaceId = id;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.solidGroup.add(mesh);
@@ -281,7 +363,10 @@ export class LevelWorld {
     this.hideGuides();
     for (const child of [...this.solidGroup.children]) {
       this.solidGroup.remove(child);
-      (child as Mesh).geometry.dispose();
+      const mesh = child as Mesh;
+      mesh.geometry.dispose();
+      const material = mesh.material;
+      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
     }
     for (const forge of this.forges) {
       this.root.remove(forge.mesh);
@@ -292,8 +377,16 @@ export class LevelWorld {
     this.lamps.clear();
     this.casterGroups.clear();
     this.casterKeys.clear();
+    this.solidLayout = '';
     this.exit = null;
+    this.column = null;
     this.sun = null;
+    this.bounds = null;
+    if (this.dressing) {
+      this.root.remove(this.dressing);
+      disposeObject(this.dressing);
+      this.dressing = null;
+    }
     for (const child of [...this.root.children]) {
       if (child === this.guides || child === this.solidGroup) continue;
       this.root.remove(child);
@@ -327,10 +420,11 @@ export class LevelWorld {
     } else {
       light = new PointLight(new Color(cfg.color), cfg.intensity * 55, cfg.range, 2);
     }
-    group.add(pole, head, light);
+    const glow = createBeam(new Color(cfg.color));
+    group.add(pole, head, light, glow.cone, glow.halo);
     pole.scale.y = Math.max(0.4, cfg.position[1]);
     pole.position.y = -pole.scale.y / 2;
-    return { cfg, group, pole, head, beam, light, target };
+    return { cfg, group, pole, head, beam, glow, light, target };
   }
 
   private fillCaster(group: Group, volume: CasterVolume): void {
@@ -377,7 +471,25 @@ export class LevelWorld {
       new MeshStandardMaterial({ color: 0xffb15a, emissive: 0xffb15a, emissiveIntensity: 1, roughness: 0.3 }),
     );
     button.position.y = 0.94;
-    group.add(base, button);
+    const ring = new Mesh(
+      new TorusGeometry(0.22, 0.012, 8, 28),
+      new MeshBasicMaterial({
+        color: 0x5ce1ff,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        side: DoubleSide,
+        blending: AdditiveBlending,
+      }),
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 1.14;
+    const icon = new Mesh(
+      new BoxGeometry(0.08, 0.08, 0.02),
+      new MeshStandardMaterial({ color: 0x9af6ff, emissive: 0x39e7ff, emissiveIntensity: 1.6, roughness: 0.25 }),
+    );
+    icon.position.y = 1.14;
+    group.add(base, button, ring, icon);
     return group;
   }
 
@@ -391,31 +503,49 @@ export class LevelWorld {
     return new Vector3(cfg.position[0] + spread, 0.45, cfg.position[2] + 1.15);
   }
 
-  private dress(minX: number, maxX: number, minZ: number, maxZ: number): void {
-    if (!Number.isFinite(minX)) return;
-    const beamMat = new MeshStandardMaterial({ color: 0x121722, metalness: 0.65, roughness: 0.35 });
-    const y = 6.2;
-    const span = Math.max(4, maxZ - minZ);
-    for (let x = minX + 2; x < maxX; x += 7) {
-      const beam = new Mesh(new BoxGeometry(0.18, 0.18, span), beamMat);
-      beam.position.set(x, y, (minZ + maxZ) / 2);
-      this.root.add(beam);
+  private ensureEnv(): void {
+    if (!this.profile?.envMap || this.env || !this.gl) return;
+    this.env = buildEnvMap(this.gl);
+    lab.applyEnv(this.env);
+    this.scene.environment = this.env;
+    this.scene.environmentIntensity = 0.28;
+  }
+
+  private mountDressing(): void {
+    if (this.dressing) {
+      this.root.remove(this.dressing);
+      disposeObject(this.dressing);
+      this.dressing = null;
     }
+    if (!this.bounds || !Number.isFinite(this.bounds.minX)) return;
+    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent);
+    this.root.add(this.dressing);
   }
 
   private buildMenu(): void {
-    const floor = new Mesh(new BoxGeometry(8, 0.4, 5), floorMat);
+    const floor = new Mesh(new BoxGeometry(9, 0.4, 6), floorMat);
     floor.position.y = -0.2;
-    const cube = new Mesh(new BoxGeometry(0.8, 1.6, 0.8), stone);
-    cube.position.set(0.2, 0.8, 0);
-    const lamp = new Mesh(new BoxGeometry(0.3, 0.16, 0.3), new MeshStandardMaterial({ color: 0xffd2a1, emissive: 0xffb15a, emissiveIntensity: 1.5 }));
-    lamp.position.set(-1.4, 2.2, 0);
-    const light = new PointLight(0xffd2a1, 2800, 14, 2);
-    light.position.copy(lamp.position);
-    const strip = new Mesh(new BoxGeometry(3.2, 0.05, 1.2), trimMat);
-    strip.position.set(1.6, 0.04, 0);
-    this.menu.add(floor, cube, lamp, light, strip);
-    this.menu.position.set(0, 0.2, 0);
+    floor.receiveShadow = true;
+    const monument = new Mesh(new BoxGeometry(0.72, 1.7, 0.72), stone);
+    monument.position.set(-0.15, 0.85, 0.15);
+    monument.castShadow = true;
+    const plateMat = trimMat.clone();
+    plateMat.emissive = new Color(0x39e7ff);
+    plateMat.emissiveIntensity = 1.5;
+    const plate = new Mesh(new BoxGeometry(2.6, 0.06, 1.35), plateMat);
+    plate.position.set(1.45, 0.05, 0);
+    const rig = new Group();
+    rig.position.set(-1.7, 2.45, 0.35);
+    const lamp = new Mesh(
+      new BoxGeometry(0.28, 0.14, 0.28),
+      new MeshStandardMaterial({ color: 0xffd2a1, emissive: 0xffb15a, emissiveIntensity: 2, roughness: 0.3 }),
+    );
+    const light = new PointLight(0xffd2a1, 1600, 12, 2);
+    const glow = createBeam(new Color(0xffb15a));
+    rig.add(lamp, light, glow.cone, glow.halo);
+    aimBeam(glow, new Vector3(3.15, -2.35, -0.35), 3.8, 1);
+    this.menu.add(floor, monument, plate, rig);
+    this.menu.position.set(0, 0.15, 0);
   }
 }
 

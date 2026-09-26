@@ -4,12 +4,14 @@ import { downgrade, type AppliedQuality, type QualityMode } from '../settings/Se
 export class QualityMonitor {
   private samples: number[] = [];
   private cool = 0;
+  fps = 60;
 
   update(dt: number, tier: AppliedQuality, mode: QualityMode): AppliedQuality | null {
+    const instant = 1 / Math.max(dt, 1 / 240);
+    this.fps = this.fps * 0.9 + instant * 0.1;
     this.cool = Math.max(0, this.cool - dt);
     if (mode !== 'auto' || this.cool > 0) return null;
-    const fps = 1 / Math.max(dt, 1 / 240);
-    this.samples.push(fps);
+    this.samples.push(instant);
     if (this.samples.length < 90) return null;
     const avg = this.samples.reduce((sum, value) => sum + value, 0) / this.samples.length;
     this.samples = [];

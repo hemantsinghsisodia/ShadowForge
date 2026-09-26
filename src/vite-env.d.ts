@@ -9,6 +9,7 @@ interface ShadowforgeDebug {
   pos: () => { x: number; y: number; z: number; grounded: boolean };
   drive: (x: number, z: number, ms: number) => Promise<unknown>;
   boxes: () => unknown;
+  fps: () => number;
 }
 
 declare global {

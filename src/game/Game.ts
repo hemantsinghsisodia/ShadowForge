@@ -128,6 +128,7 @@ export class Game {
             maxZ: Number(box.maxZ.toFixed(2)),
             climb: box.climbable,
           })),
+        fps: () => Math.round(this.monitor.fps),
       };
     }
     if (!localStorage.getItem('shadowforge-tutorial')) {
@@ -190,10 +191,16 @@ export class Game {
       this.audio.play('collapse');
       this.haptics.pulse(28);
       const def = this.shadows.defs.get(id);
-      if (def) this.particles.burst(def.origin.x, def.origin.y + 0.2, def.origin.z, 28, 0xff6a4a);
+      if (def) this.particles.burst(def.origin.x, def.origin.y + 0.2, def.origin.z, 28, 0xff6a4a, 'shard');
+    }
+    for (const [id, stab] of this.shadows.stability) {
+      if (!stab.forged || !stab.unstable || Math.random() > dt * 2.5) continue;
+      const ember = this.shadows.defs.get(id);
+      if (ember) this.particles.burst(ember.origin.x, ember.origin.y + 0.15, ember.origin.z, 3, 0xffb15a, 'ember');
     }
     if (this.shadows.takeVisualDirty()) this.world.sync(this.shadows);
-    this.world.update(dt);
+    this.world.update(dt, this.body.x, this.body.z);
+    this.particles.setFocus(this.body.x, this.body.y, this.body.z);
     this.particles.update(dt);
     this.ui.setHud(this.hud());
     if (this.body.y < -6) this.respawn();
@@ -251,6 +258,7 @@ export class Game {
     if (this.transition < 0.55) return;
     const forged = this.shadows.forge(this.pendingSurface);
     this.world.sync(this.shadows);
+    if (forged) this.world.pulseForge(this.pendingSurface);
     this.state.set('PLAYING');
     if (!forged) this.audio.play('deny');
   }
@@ -275,7 +283,7 @@ export class Game {
       this.audio.play('forge');
       this.haptics.pulse(30);
       const def = this.shadows.defs.get(hit.surfaceId);
-      if (def) this.particles.burst(def.origin.x, def.origin.y + 0.3, def.origin.z, 36, 0x5ce1ff);
+      if (def) this.particles.burst(def.origin.x, def.origin.y + 0.3, def.origin.z, 36, 0x5ce1ff, 'spark');
       return;
     }
     if (hit.interaction === 'toggle') {
@@ -593,6 +601,8 @@ export class Game {
 
   private driftMenu(dt: number): void {
     this.world.update(dt);
+    this.particles.setFocus(0, 1, 0);
+    this.particles.update(dt);
     const t = this.world.time;
     this.camera.camera.position.set(Math.sin(t * 0.25) * 0.6 + 3.1, 1.9, 5.2);
     this.camera.camera.lookAt(0, 0.7, 0);
@@ -643,9 +653,13 @@ export class Game {
   private applyTier(): void {
     const profile = profileFor(this.tier, isCoarsePointer());
     this.renderer.applyQuality(profile);
-    this.renderer.setBloom(profile.bloom, this.scene, this.camera.camera);
+    this.renderer.setPresentation(profile, this.scene, this.camera.camera);
+    this.world.bindRenderer(this.renderer.renderer);
+    this.world.applyProfile(profile);
     this.world.applyShadowSize(profile.shadowMapSize);
     this.particles.setBudget(profile.particles);
+    this.particles.setDust(profile.dust);
+    this.player.setLamp(profile.playerLight);
     this.resize();
   }
 

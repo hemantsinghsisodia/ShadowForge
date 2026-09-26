@@ -47,9 +47,9 @@ function clampNum(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, n));
 }
 
-export function initialAppliedQuality(mode: QualityMode, coarse: boolean): AppliedQuality {
+export function initialAppliedQuality(mode: QualityMode, _coarse: boolean): AppliedQuality {
   if (mode === 'low' || mode === 'medium' || mode === 'high') return mode;
-  return coarse ? 'medium' : 'high';
+  return 'high';
 }
 
 export function downgrade(tier: AppliedQuality): AppliedQuality | null {
@@ -64,15 +64,65 @@ export interface QualityProfile {
   shadowMapSize: number;
   particles: number;
   bloom: boolean;
+  /** 1 is full resolution. Phones on MEDIUM use a half-resolution bloom buffer. */
+  bloomScale: number;
   lightCap: number;
+  envMap: boolean;
+  beams: boolean;
+  dust: number;
+  postFx: boolean;
+  playerLight: boolean;
+  dressingDetail: 'low' | 'high';
 }
 
 export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfile {
   if (tier === 'low') {
-    return { dprCap: coarse ? 1 : 1.25, antialias: false, shadowMapSize: 0, particles: 40, bloom: false, lightCap: 4 };
+    return {
+      dprCap: coarse ? 1 : 1.25,
+      antialias: false,
+      shadowMapSize: 0,
+      particles: 40,
+      bloom: false,
+      bloomScale: 1,
+      lightCap: 4,
+      envMap: false,
+      beams: false,
+      dust: 0,
+      postFx: false,
+      playerLight: false,
+      dressingDetail: 'low',
+    };
   }
   if (tier === 'medium') {
-    return { dprCap: coarse ? 1.5 : 1.75, antialias: !coarse, shadowMapSize: 1024, particles: 110, bloom: false, lightCap: 6 };
+    return {
+      dprCap: coarse ? 1.5 : 1.75,
+      antialias: !coarse,
+      shadowMapSize: 1024,
+      particles: 110,
+      bloom: true,
+      bloomScale: coarse ? 0.5 : 1,
+      lightCap: 6,
+      envMap: true,
+      beams: true,
+      dust: 40,
+      postFx: true,
+      playerLight: true,
+      dressingDetail: 'high',
+    };
   }
-  return { dprCap: coarse ? 1.5 : 2, antialias: true, shadowMapSize: 2048, particles: 220, bloom: !coarse, lightCap: 8 };
+  return {
+    dprCap: coarse ? 1.5 : 2,
+    antialias: true,
+    shadowMapSize: 2048,
+    particles: 220,
+    bloom: true,
+    bloomScale: 1,
+    lightCap: 8,
+    envMap: true,
+    beams: true,
+    dust: 80,
+    postFx: true,
+    playerLight: true,
+    dressingDetail: 'high',
+  };
 }

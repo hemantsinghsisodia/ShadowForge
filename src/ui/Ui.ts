@@ -68,7 +68,7 @@ export class Ui {
           <h1>SHADOWFORGE</h1>
           <p class="muted">Shape the darkness. Change the world.</p>
           <div class="stack">
-            <button class="primary" data-act="continue">Continue</button>
+            <button class="primary" data-act="continue">Start</button>
             <button data-act="levels">Levels</button>
             <button data-act="tutorial">How to play</button>
             <button data-act="settings">Settings</button>
