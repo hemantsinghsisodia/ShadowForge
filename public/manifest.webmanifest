@@ -1,0 +1,9 @@
+{
+  "name": "SHADOWFORGE",
+  "short_name": "SHADOWFORGE",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07080e",
+  "theme_color": "#07080e",
+  "start_url": "./"
+}

@@ -73,6 +73,7 @@ export class LevelWorld {
   private sun: DirectionalLight | null = null;
   private config: LevelConfig | null = null;
   private dressing: Group | null = null;
+  private pillars: Mesh[] = [];
   private bounds: RoomBounds | null = null;
   private accent = new Color(0x5ce1ff);
   private beamsOn = true;
@@ -389,6 +390,7 @@ export class LevelWorld {
     this.column = null;
     this.sun = null;
     this.bounds = null;
+    this.pillars = [];
     if (this.dressing) {
       this.root.remove(this.dressing);
       disposeObject(this.dressing);
@@ -524,9 +526,41 @@ export class LevelWorld {
       disposeObject(this.dressing);
       this.dressing = null;
     }
+    this.pillars = [];
     if (!this.bounds || !Number.isFinite(this.bounds.minX)) return;
     this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent);
     this.root.add(this.dressing);
+    this.dressing.traverse((child) => {
+      if (child.userData.pillar) this.pillars.push(child as Mesh);
+    });
+  }
+
+  /** Hide a pillar that sits between the camera and the player, so it cannot fill the screen. */
+  fadeOccluders(cam: Vector3, fx: number, fz: number, dt: number): void {
+    const ax = fx - cam.x;
+    const az = fz - cam.z;
+    const len2 = ax * ax + az * az;
+    for (const pillar of this.pillars) {
+      const mat = pillar.material as MeshStandardMaterial;
+      let t = 0;
+      if (len2 > 1e-6) {
+        t = ((pillar.position.x - cam.x) * ax + (pillar.position.z - cam.z) * az) / len2;
+        t = Math.max(0, Math.min(1, t));
+      }
+      const dist = Math.hypot(pillar.position.x - (cam.x + ax * t), pillar.position.z - (cam.z + az * t));
+      const target = dist < 0.73 ? 0 : 1;
+      const delta = target - mat.opacity;
+      mat.opacity += Math.sign(delta) * Math.min(Math.abs(delta), 8 * dt);
+      const solid = mat.opacity > 0.99;
+      if (mat.transparent === solid) {
+        mat.transparent = !solid;
+        mat.needsUpdate = true;
+      }
+      mat.depthWrite = solid;
+      const shown = mat.opacity > 0.02;
+      pillar.visible = shown;
+      pillar.castShadow = shown;
+    }
   }
 
   private buildMenu(): void {

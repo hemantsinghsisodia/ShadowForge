@@ -2,6 +2,7 @@ import { Color, FogExp2, Raycaster, Scene, Vector2 } from 'three';
 import { AudioManager } from '../audio/AudioManager';
 import { Haptics } from '../audio/Haptics';
 import { phonePortrait, isCoarsePointer } from '../core/device';
+import { requestGameFullscreen } from '../core/fullscreen';
 import { GameState } from '../core/GameState';
 import { QualityMonitor } from '../core/QualityMonitor';
 import { Renderer } from '../core/Renderer';
@@ -85,6 +86,7 @@ export class Game {
       confirm: () => this.input.press('confirm'),
       cancel: () => this.input.press('cancel'),
       slider: (index) => this.commitIndex(index),
+      fullscreen: () => requestGameFullscreen(),
     });
     this.audio.onCaption = (text) => this.ui.caption(text);
     this.applySettings();
@@ -224,6 +226,7 @@ export class Game {
     if (this.body.grounded && Math.hypot(this.body.vx, this.body.vz) > 1.4) this.audio.step();
     this.player.update(dt, this.body);
     this.camera.update(dt, this.body, boxes);
+    this.world.fadeOccluders(this.camera.camera.position, this.body.x, this.body.z, dt);
     if (frame.interact) this.tryInteract();
     if (frame.clicked) this.pickNode(frame.clickX, frame.clickY);
   }
@@ -245,6 +248,7 @@ export class Game {
     this.player.update(dt, this.body);
     this.camera.look(frame.lookX * 0.35, frame.lookY * 0.35);
     this.camera.update(dt, this.body, boxes);
+    this.world.fadeOccluders(this.camera.camera.position, this.body.x, this.body.z, dt);
   }
 
   private playTransition(dt: number): void {
@@ -257,6 +261,7 @@ export class Game {
     this.body.step(dt, 0, 0, false, boxes);
     this.player.update(dt, this.body);
     this.camera.update(dt, this.body, boxes);
+    this.world.fadeOccluders(this.camera.camera.position, this.body.x, this.body.z, dt);
     if (this.transition < 0.55) return;
     const forged = this.shadows.forge(this.pendingSurface);
     this.world.sync(this.shadows);
@@ -617,6 +622,7 @@ export class Game {
     this.world.update(dt);
     this.player.update(dt, this.body);
     this.camera.update(dt, this.body, this.shadows.collisionBoxes());
+    this.world.fadeOccluders(this.camera.camera.position, this.body.x, this.body.z, dt);
   }
 
   private placePlayer(): void {

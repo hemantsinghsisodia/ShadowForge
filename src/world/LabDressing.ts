@@ -28,9 +28,10 @@ export function buildDressing(bounds: RoomBounds, detail: 'low' | 'high', mats: 
   if (detail === 'high') {
     for (let x = minX + 4; x < maxX; x += 10) {
       for (const z of [minZ + 0.6, maxZ - 0.6]) {
-        const pillar = new Mesh(new CylinderGeometry(0.22, 0.28, 6.2, 8), mats.stone);
+        const pillar = new Mesh(new CylinderGeometry(0.22, 0.28, 6.2, 8), mats.stone.clone());
         pillar.position.set(x, 3.1, z);
         pillar.castShadow = true;
+        pillar.userData.pillar = true;
         root.add(pillar);
       }
     }

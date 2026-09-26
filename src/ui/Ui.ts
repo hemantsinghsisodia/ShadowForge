@@ -42,6 +42,7 @@ export interface UiHooks {
   confirm: () => void;
   cancel: () => void;
   slider: (index: number) => void;
+  fullscreen: () => void;
 }
 
 const TUTORIAL = [
@@ -197,6 +198,13 @@ export class Ui {
       else if (act === 'confirm') hooks.confirm();
       else if (act === 'cancel') hooks.cancel();
       else if (act === 'level') hooks.startLevel(Number(target.dataset.level));
+    });
+    // pointerdown preventDefault cancels the click, so the fullscreen gesture is the pointerup.
+    const fullscreenActs = new Set(['continue', 'begin', 'level', 'resume', 'restart', 'next']);
+    root.addEventListener('pointerup', (event) => {
+      const target = (event.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
+      if (!target || (target as HTMLButtonElement).disabled) return;
+      if (fullscreenActs.has(target.dataset.act ?? '')) hooks.fullscreen();
     });
     this.slider.addEventListener('input', () => hooks.slider(Number(this.slider.value)));
   }
