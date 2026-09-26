@@ -25,7 +25,8 @@ export const gradeShader = {
       float grain = fract(sin(dot(vUv + fract(time * 0.37), vec2(12.9898, 78.233))) * 43758.5453);
       vec3 col = texel.rgb;
       col *= mix(1.0, vig, 0.5 * amount);
-      col += (grain - 0.5) * 0.045 * amount;
+      float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col *= 1.0 + (grain - 0.5) * 0.06 * amount * smoothstep(0.002, 0.05, lum);
       col = mix(col, col * vec3(0.86, 0.96, 1.08) + vec3(0.008, 0.016, 0.03), amount);
       gl_FragColor = vec4(col, texel.a);
     }
