@@ -77,14 +77,28 @@ function wallMap(): CanvasTexture {
   });
 }
 
+/** Soft mottling only. Row shading here reads as staircase bands on tall faces. */
 function metalMap(): CanvasTexture {
   return paint(128, 128, (ctx) => {
-    ctx.fillStyle = '#5e6878';
+    ctx.fillStyle = '#646d7c';
     ctx.fillRect(0, 0, 128, 128);
-    for (let y = 0; y < 128; y++) {
-      const shade = 78 + Math.floor(Math.sin(y * 0.7) * 14 + Math.random() * 8);
-      ctx.fillStyle = `rgb(${shade},${shade + 4},${shade + 10})`;
-      ctx.fillRect(0, y, 128, 1);
+    for (let i = 0; i < 7; i++) {
+      const x = Math.random() * 128;
+      const y = Math.random() * 128;
+      const radius = 22 + Math.random() * 26;
+      const shade = 92 + Math.floor(Math.random() * 18);
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, `rgba(${shade},${shade + 3},${shade + 8},0.35)`);
+      gradient.addColorStop(1, 'rgba(100,109,124,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 160; i++) {
+      const shade = 96 + Math.floor(Math.random() * 24);
+      ctx.fillStyle = `rgba(${shade},${shade},${shade + 4},0.16)`;
+      ctx.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
     }
   });
 }
@@ -144,12 +158,14 @@ export function createLabMaterials(): LabMaterials {
   });
   const lamp = new MeshStandardMaterial({
     map: metal,
+    roughnessMap: roughness(0.28),
     color: 0xffffff,
     metalness: 0.82,
     roughness: 0.28,
   });
   const stone = new MeshStandardMaterial({
     map: metal,
+    roughnessMap: roughness(0.48),
     color: 0x6d7888,
     metalness: 0.4,
     roughness: 0.48,
