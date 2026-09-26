@@ -155,6 +155,7 @@ export class Game {
     if (portrait && (this.state.name === 'PLAYING' || this.state.name === 'SHADOW_TRANSITION')) {
       this.rotateLock = true;
       this.input.sample();
+      this.world.backdrop.follow(this.camera.camera.position);
       this.renderer.render(this.scene, this.camera.camera);
       return;
     }
@@ -174,6 +175,7 @@ export class Game {
       this.applyTier();
       this.ui.caption(`Graphics lowered to ${dropped}`);
     }
+    this.world.backdrop.follow(this.camera.camera.position);
     this.renderer.render(this.scene, this.camera.camera);
   }
 
@@ -595,6 +597,7 @@ export class Game {
     this.player.group.visible = false;
     this.scene.background = new Color(0x07080e);
     this.scene.fog = new FogExp2(0x07080e, 0.08);
+    this.world.backdrop.setTint(new Color(0x9eb6ff), new Color(0x07080e));
     this.state.set('MENU');
     this.ui.show('menu');
   }

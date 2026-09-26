@@ -1,5 +1,5 @@
 import type { LevelConfig } from './LevelData';
-import { consoleAt, facingX, forgeWall, makeCaster, makeLight, perimeter, slab } from './helpers';
+import { consoleAt, facingX, forgeWall, makeCaster, makeLight, slab } from './helpers';
 
 const cells: [number, number][] = [];
 for (let row = 0; row < 12; row++) {
@@ -16,7 +16,6 @@ const level3: LevelConfig = {
   platforms: [
     slab(-5.1, 0, 11.8, 10, 0),
     slab(4.8, 0, 8, 10, 3),
-    ...perimeter(-12, 10, -5, 5, 6),
   ],
   lights: [
     makeLight({

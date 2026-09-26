@@ -19,21 +19,6 @@ export function block(x: number, y: number, z: number, w: number, h: number, d: 
   return { position: [x, y, z], size: [w, h, d] };
 }
 
-export function perimeter(minX: number, maxX: number, minZ: number, maxZ: number, height = 4.8): PlatformConfig[] {
-  const t = 0.45;
-  const midX = (minX + maxX) / 2;
-  const midZ = (minZ + maxZ) / 2;
-  const w = maxX - minX;
-  const d = maxZ - minZ;
-  const y = height / 2;
-  return [
-    block(midX, y, minZ - t / 2, w + t * 2, height, t),
-    block(midX, y, maxZ + t / 2, w + t * 2, height, t),
-    block(minX - t / 2, y, midZ, t, height, d),
-    block(maxX + t / 2, y, midZ, t, height, d),
-  ];
-}
-
 export function forgeFloor(
   id: string,
   x: number,
@@ -199,7 +184,7 @@ export interface Course {
   rows: number;
 }
 
-/** Two floor slabs with a forge plate bridging the gap, plus perimeter walls. */
+/** Two floor slabs with a forge plate bridging the gap. */
 export function gapCourse(
   id: string,
   minX: number,
@@ -208,7 +193,6 @@ export function gapCourse(
   maxX: number,
   zHalf = 5,
   forgeDepth = 3,
-  walls = true,
   top = 0,
 ): Course {
   const startW = gap0 - minX;
@@ -220,7 +204,6 @@ export function gapCourse(
     platforms: [
       slab(minX + startW / 2, 0, startW, zHalf * 2, top),
       slab(gap1 + endW / 2, 0, endW, zHalf * 2, top),
-      ...(walls ? perimeter(minX, maxX, -zHalf, zHalf) : []),
     ],
     forge,
     cols: Math.round(forgeW / 0.25),

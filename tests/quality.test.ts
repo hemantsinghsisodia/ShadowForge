@@ -14,6 +14,7 @@ describe('quality profiles', () => {
     expect(profile.dressingDetail).toBe('high');
     expect(profile.dprCap).toBe(1.5);
     expect(profile.msaa).toBe(4);
+    expect(profile.sky).toBe('high');
   });
 
   it('starts AUTO on HIGH for phones and desktops', () => {
@@ -29,11 +30,13 @@ describe('quality profiles', () => {
     expect(profile.postFx).toBe(false);
     expect(profile.dust).toBe(0);
     expect(profile.dressingDetail).toBe('low');
+    expect(profile.sky).toBe('low');
   });
 
   it('uses half-resolution bloom for phones on MEDIUM', () => {
     expect(profileFor('medium', true).bloomScale).toBe(0.5);
     expect(profileFor('medium', false).bloomScale).toBe(1);
     expect(profileFor('medium', true).bloom).toBe(true);
+    expect(profileFor('medium', false).sky).toBe('medium');
   });
 });

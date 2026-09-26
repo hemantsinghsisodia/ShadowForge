@@ -34,6 +34,7 @@ import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { buildDressing, type RoomBounds } from './LabDressing';
+import { SpaceBackdrop } from './SpaceBackdrop';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
 interface LampView {
@@ -80,11 +81,13 @@ export class LevelWorld {
   private env: Texture | null = null;
   private profile: QualityProfile | null = null;
   private solidLayout = '';
+  readonly backdrop = new SpaceBackdrop();
   time = 0;
 
   constructor(private scene: Scene) {
     this.scene.add(this.root);
     this.scene.add(this.menu);
+    this.scene.add(this.backdrop.group);
     this.root.add(this.guides, this.solidGroup);
     this.buildMenu();
   }
@@ -117,6 +120,7 @@ export class LevelWorld {
       lab.applyEnv(null);
     }
     if (detailChanged && this.bounds) this.mountDressing();
+    this.backdrop.setDetail(profile.sky);
   }
 
   pulseForge(id: string): void {
@@ -130,6 +134,7 @@ export class LevelWorld {
     const fog = new Color(0x07080e).lerp(this.accent, 0.16);
     this.scene.background = fog;
     this.scene.fog = new FogExp2(fog, config.id >= 8 ? 0.016 : 0.028);
+    this.backdrop.setTint(this.accent, fog);
     const hemi = new HemisphereLight(0xb7c6dc, 0x243044, 2.1);
     this.root.add(hemi);
     this.sun = new DirectionalLight(0xe7eef8, 4.5);
@@ -296,6 +301,7 @@ export class LevelWorld {
 
   update(dt: number, px = 0, pz = 0): void {
     this.time += dt;
+    this.backdrop.update(dt);
     if (this.exit) this.exit.rotation.z = this.time * 0.6;
     if (this.column) {
       const mat = this.column.material as MeshBasicMaterial;

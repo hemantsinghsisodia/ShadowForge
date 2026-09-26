@@ -75,6 +75,8 @@ export interface QualityProfile {
   dressingDetail: 'low' | 'high';
   /** Multisample count for the post-processing buffer. 0 on Low, which has no composer. */
   msaa: number;
+  /** Space backdrop detail. High is the same on phones and desktops. */
+  sky: 'low' | 'medium' | 'high';
 }
 
 export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfile {
@@ -94,6 +96,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       playerLight: false,
       dressingDetail: 'low',
       msaa: 0,
+      sky: 'low',
     };
   }
   if (tier === 'medium') {
@@ -112,6 +115,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       playerLight: true,
       dressingDetail: 'high',
       msaa: coarse ? 2 : 4,
+      sky: 'medium',
     };
   }
   return {
@@ -129,5 +133,6 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     playerLight: true,
     dressingDetail: 'high',
     msaa: 4,
+    sky: 'high',
   };
 }

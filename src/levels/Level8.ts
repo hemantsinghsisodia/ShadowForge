@@ -1,9 +1,9 @@
 import type { LevelConfig } from './LevelData';
-import { band, consoleAt, facingX, gapCourse, makeCaster, makeLight, perimeter } from './helpers';
+import { band, consoleAt, facingX, gapCourse, makeCaster, makeLight } from './helpers';
 
-const approach = gapCourse('ramp', -14, -3.6, 0.8, 2, 4, 3, false);
-const left = gapCourse('corner', 2, 12.2, 13.75, 20, 4, 3, false, 0);
-const right = gapCourse('pad', 20, 30.4, 34.8, 40, 4, 3, false, 0);
+const approach = gapCourse('ramp', -14, -3.6, 0.8, 2, 4, 3);
+const left = gapCourse('corner', 2, 12.2, 13.75, 20, 4, 3, 0);
+const right = gapCourse('pad', 20, 30.4, 34.8, 40, 4, 3, 0);
 approach.forge.zone = 'ramp';
 approach.forge.kind = 'ramp';
 approach.forge.rise = 0.55;
@@ -47,7 +47,6 @@ const level8: LevelConfig = {
     ...approach.platforms,
     ...left.platforms,
     ...right.platforms,
-    ...perimeter(-14, 40, -5, 5, 5),
   ],
   lights: [
     makeLight({ id: 'lamp-a', label: 'Ramp lamp', position: [-9.2, 4.15, 0], range: 14, zone: 'ramp' }),

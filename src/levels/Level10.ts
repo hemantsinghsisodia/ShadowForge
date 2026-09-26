@@ -1,8 +1,8 @@
 import type { LevelConfig } from './LevelData';
-import { band, consoleAt, facingX, forgeWall, gapCourse, makeCaster, makeLight, perimeter, slab } from './helpers';
+import { band, consoleAt, facingX, forgeWall, gapCourse, makeCaster, makeLight, slab } from './helpers';
 
-const bridge = gapCourse('bridge', -12, -3.6, 0.8, 10, 5, 3, false);
-const fade = gapCourse('fade', 40, 48.6, 53.2, 62, 5, 3, false);
+const bridge = gapCourse('bridge', -12, -3.6, 0.8, 10, 5, 3);
+const fade = gapCourse('fade', 40, 48.6, 53.2, 62, 5, 3);
 fade.forge.unstable = true;
 fade.forge.decayTime = 14;
 
@@ -23,7 +23,6 @@ const level10: LevelConfig = {
     ...fade.platforms,
     slab(29.2, 0, 3.2, 4, 1.5),
     slab(36, 0, 14, 8, 0),
-    ...perimeter(-14, 66, -6, 6, 6),
   ],
   lights: [
     makeLight({

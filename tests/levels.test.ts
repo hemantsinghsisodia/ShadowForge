@@ -82,6 +82,7 @@ describe('level 1 bridge', () => {
       }
       body.step(1 / 60, wishX, wishZ, false, world);
       if (body.y < -2) break;
+      if (forged && body.x > 4 && body.y > -0.5) break;
     }
     return body;
   }
