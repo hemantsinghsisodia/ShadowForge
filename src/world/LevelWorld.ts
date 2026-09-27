@@ -10,6 +10,7 @@ import {
   FogExp2,
   Group,
   HemisphereLight,
+  InstancedMesh,
   Line,
   LineBasicMaterial,
   Mesh,
@@ -33,7 +34,8 @@ import type { CasterVolume } from '../shadows/types';
 import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
-import { buildDressing, type RoomBounds } from './LabDressing';
+import { envKit, loadEnvKit, type EnvKit } from './EnvKit';
+import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
 import { SpaceBackdrop } from './SpaceBackdrop';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
@@ -82,6 +84,9 @@ export class LevelWorld {
   private env: Texture | null = null;
   private profile: QualityProfile | null = null;
   private solidLayout = '';
+  private platformViews: Mesh[][] = [];
+  private loadToken = 0;
+  private dressingKit = false;
   readonly backdrop = new SpaceBackdrop();
   time = 0;
 
@@ -153,12 +158,15 @@ export class LevelWorld {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.root.add(mesh);
+      const views = [mesh];
       const top = platform.position[1] + platform.size[1] / 2;
       if (platform.size[1] < 2) {
         const strip = new Mesh(new BoxGeometry(Math.max(0.2, platform.size[0] - 0.2), 0.045, 0.07), trimMat);
         strip.position.set(platform.position[0], top + 0.02, platform.position[2] - platform.size[2] / 2 + 0.08);
         this.root.add(strip);
+        views.push(strip);
       }
+      this.platformViews.push(views);
       minX = Math.min(minX, platform.position[0] - platform.size[0] / 2);
       maxX = Math.max(maxX, platform.position[0] + platform.size[0] / 2);
       minZ = Math.min(minZ, platform.position[2] - platform.size[2] / 2);
@@ -166,6 +174,13 @@ export class LevelWorld {
     }
     this.bounds = { minX, maxX, minZ, maxZ };
     this.mountDressing();
+    const token = ++this.loadToken;
+    const kit = envKit();
+    if (kit) this.applyKit(kit);
+    else
+      void loadEnvKit().then((loaded) => {
+        if (loaded && token === this.loadToken) this.applyKit(loaded);
+      });
 
     for (const cfg of config.lights) {
       const view = this.makeLamp(cfg);
@@ -391,6 +406,7 @@ export class LevelWorld {
     this.sun = null;
     this.bounds = null;
     this.pillars = [];
+    this.platformViews = [];
     if (this.dressing) {
       this.root.remove(this.dressing);
       disposeObject(this.dressing);
@@ -400,6 +416,24 @@ export class LevelWorld {
       if (child === this.guides || child === this.solidGroup) continue;
       this.root.remove(child);
       disposeObject(child);
+    }
+  }
+
+  /**
+   * Swaps the procedural floor visuals for kit tiles once the kit is available. The procedural
+   * boxes stay in place (hidden) and collision never reads either, so a failure leaves the level as it was.
+   */
+  private applyKit(kit: EnvKit): void {
+    if (!this.config) return;
+    try {
+      const floor = buildKitFloor(kit, this.config.platforms);
+      if (floor) {
+        this.root.add(floor.group);
+        for (const index of floor.covered) for (const view of this.platformViews[index] ?? []) view.visible = false;
+      }
+      if (!this.dressingKit) this.mountDressing();
+    } catch (error) {
+      console.error('[EnvKit] failed to dress the level; keeping procedural visuals.', error);
     }
   }
 
@@ -529,7 +563,9 @@ export class LevelWorld {
     }
     this.pillars = [];
     if (!this.bounds || !Number.isFinite(this.bounds.minX)) return;
-    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent);
+    const kit = envKit();
+    this.dressingKit = kit !== null;
+    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent, kit, this.config);
     this.root.add(this.dressing);
     this.dressing.traverse((child) => {
       if (child.userData.pillar) this.pillars.push(child as Mesh);
@@ -542,7 +578,8 @@ export class LevelWorld {
     const az = fz - cam.z;
     const len2 = ax * ax + az * az;
     for (const pillar of this.pillars) {
-      const mat = pillar.material as MeshStandardMaterial;
+      const mats = (Array.isArray(pillar.material) ? pillar.material : [pillar.material]) as MeshStandardMaterial[];
+      const mat = mats[0];
       let t = 0;
       if (len2 > 1e-6) {
         t = ((pillar.position.x - cam.x) * ax + (pillar.position.z - cam.z) * az) / len2;
@@ -551,14 +588,17 @@ export class LevelWorld {
       const dist = Math.hypot(pillar.position.x - (cam.x + ax * t), pillar.position.z - (cam.z + az * t));
       const target = dist < 0.73 ? 0 : 1;
       const delta = target - mat.opacity;
-      mat.opacity += Math.sign(delta) * Math.min(Math.abs(delta), 8 * dt);
-      const solid = mat.opacity > 0.99;
-      if (mat.transparent === solid) {
-        mat.transparent = !solid;
-        mat.needsUpdate = true;
+      const opacity = mat.opacity + Math.sign(delta) * Math.min(Math.abs(delta), 8 * dt);
+      const solid = opacity > 0.99;
+      for (const entry of mats) {
+        entry.opacity = opacity;
+        if (entry.transparent === solid) {
+          entry.transparent = !solid;
+          entry.needsUpdate = true;
+        }
+        entry.depthWrite = solid;
       }
-      mat.depthWrite = solid;
-      const shown = mat.opacity > 0.02;
+      const shown = opacity > 0.02;
       pillar.visible = shown;
       pillar.castShadow = shown;
     }
@@ -596,13 +636,15 @@ function railLine(points: Vector3[]): Line {
 }
 
 function disposeObject(object: Object3D): void {
+  const kit = envKit();
   object.traverse((child: Object3D) => {
     const mesh = child as Mesh;
-    if (mesh.geometry) mesh.geometry.dispose();
+    if ((mesh as InstancedMesh).isInstancedMesh) (mesh as InstancedMesh).dispose();
+    if (mesh.geometry && !kit?.owns(mesh.geometry)) mesh.geometry.dispose();
     const material = mesh.material;
     const list = Array.isArray(material) ? material : material ? [material] : [];
     for (const entry of list) {
-      if (!sharedMaterials.has(entry)) entry.dispose();
+      if (!sharedMaterials.has(entry) && !kit?.owns(entry)) entry.dispose();
     }
   });
 }
