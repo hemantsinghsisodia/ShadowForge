@@ -11,35 +11,21 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
- * SHADOWFORGE modular environment kit (public/models/environment/SHADOWFORGE_EnvKit.glb).
+ * Kenney Modular Space Kit subset (public/models/environment/KenneyModularSpace.glb).
+ * CC0. Pieces are already Y-up and 1 unit = 1 m, packed with their footprint centred
+ * on XZ and their base on y = 0. Floor tiles are 4 x 4 m. Corridor and wall modules
+ * from the pack are full rooms, so they are not included: they would close the gap
+ * and block the camera.
  *
- * Every prototype sits at the origin with an identity transform, 1 unit = 1 m:
- * floor tiles and edges have their top at y = 0 and extend down to y = -0.5,
- * props and lights stand on y = 0, the wall console hangs from its back plate.
- *
- * Orientation: the Blender kit faces +Y, which the glTF Y-up export turns into -Z.
- * So at rotation.y = 0 a directional prototype (terminal screen, wall console,
- * vertical light strip, floor-edge warning stripe) faces -Z, and facing a world
- * direction (dx, dz) needs rotation.y = atan2(-dx, -dz).
+ * Yaw 0 keeps the authored facing. A piece that should look toward (dx, dz) uses
+ * rotation.y = atan2(-dx, -dz).
  */
 export const KIT = {
-  tileA: 'SHF_Floor_Tile_A',
-  tileB: 'SHF_Floor_Tile_B',
-  edge: 'SHF_Floor_Edge',
-  platform: 'SHF_Floor_Platform_A',
-  pillar: 'SHF_Pillar_A',
-  maintenanceBox: 'SHF_Prop_MaintenanceBox',
-  cableTray: 'SHF_Structure_CableTray',
-  trimWarning: 'SHF_Trim_Warning',
-  beam: 'SHF_Structure_Beam',
-  terminal: 'SHF_Prop_Terminal',
-  wallConsole: 'SHF_Prop_WallConsole',
-  energyContainer: 'SHF_Prop_EnergyContainer',
-  cableJunction: 'SHF_Prop_CableJunction',
-  powerUnit: 'SHF_Prop_FloorPowerUnit',
-  lamp: 'SHF_Lamp_Industrial',
-  strip: 'SHF_Light_Strip_A',
-  stripVertical: 'SHF_Light_Strip_Vertical_A',
+  tileA: 'template-floor',
+  tileB: 'template-floor-detail',
+  pillar: 'template-detail',
+  cables: 'cables',
+  corner: 'template-wall-corner',
 } as const;
 
 export type KitName = (typeof KIT)[keyof typeof KIT];
@@ -57,7 +43,7 @@ export interface EnvKit {
   owns(resource: BufferGeometry | Material): boolean;
 }
 
-const URL = `${import.meta.env.BASE_URL}models/environment/SHADOWFORGE_EnvKit.glb`;
+const URL = `${import.meta.env.BASE_URL}models/environment/KenneyModularSpace.glb`;
 let pending: Promise<EnvKit | null> | null = null;
 let ready: EnvKit | null = null;
 
@@ -139,7 +125,7 @@ async function fetchKit(): Promise<EnvKit | null> {
   }
 }
 
-/** The exporter tags materials with KHR_materials_specular, which makes GLTFLoader build heavier physical materials. */
+/** Keeps the packed colormap. GLTFLoader may still build a physical material for extension flags. */
 function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>): MeshStandardMaterial {
   const hit = cache.get(source);
   if (hit) return hit;
@@ -147,10 +133,12 @@ function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>
   const material = new MeshStandardMaterial({
     name: src.name,
     color: src.color,
+    map: src.map,
     metalness: src.metalness,
     roughness: src.roughness,
     emissive: src.emissive,
     emissiveIntensity: src.emissiveIntensity,
+    side: src.side,
   });
   source.dispose();
   cache.set(source, material);

@@ -146,3 +146,5 @@ If the browser can't create a WebGL context, the game shows a message asking for
 ## Credits
 
 The player is the Spacesuit character from Quaternius' [Ultimate Modular Men Pack](https://quaternius.com/packs/ultimatemodularcharacters.html), used under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+
+Level dressing uses a subset of Kenney's [Modular Space Kit](https://kenney.nl/assets/modular-space-kit), also under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).

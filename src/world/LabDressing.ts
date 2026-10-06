@@ -10,10 +10,9 @@ export interface RoomBounds {
   maxZ: number;
 }
 
-/** Kit tiles are 2 x 2 m with their top at y = 0 and 0.5 m deep; kit edges are 2 m long and 0.28 m wide. */
-const TILE = 2;
+/** Kenney floor tiles are 4 x 4 m and sit on y = 0. TILE_DEPTH keeps a 0.5 m slab at scale 1. */
+const TILE = 4;
 const TILE_DEPTH = 0.5;
-const EDGE_WIDTH = 0.28;
 
 /** Floor-edge dressing: a glowing pit under the room and pillars along the sides. */
 export function buildDressing(
@@ -43,7 +42,8 @@ export function buildDressing(
     const kitPillar = kit?.merged(KIT.pillar) ?? null;
     const spots: [number, number][] = [];
     for (let x = minX + 4; x < maxX; x += 10) {
-      for (const z of [minZ + 0.6, maxZ - 0.6]) {
+      // The Kenney column is 1.56 m across, so its centre sits on the rim. The thin fallback stays inset.
+      for (const z of kitPillar ? [minZ, maxZ] : [minZ + 0.6, maxZ - 0.6]) {
         spots.push([x, z]);
         // Each pillar owns its materials: LevelWorld.fadeOccluders fades them one pillar at a time.
         const pillar = kitPillar
@@ -83,13 +83,6 @@ function rectOf(platform: PlatformConfig): Rect {
   return { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, top: y + h / 2 };
 }
 
-/** True when a neighbouring slab continues the floor at the same height just past this point. */
-function continued(rects: Rect[], self: Rect, x: number, z: number): boolean {
-  return rects.some(
-    (r) => r !== self && Math.abs(r.top - self.top) < 0.05 && x > r.minX && x < r.maxX && z > r.minZ && z < r.maxZ,
-  );
-}
-
 const UP = new Vector3(0, 1, 0);
 
 function place(x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1, sz = 1): Matrix4 {
@@ -98,65 +91,29 @@ function place(x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1, sz = 1)
 
 /**
  * Kit floor visuals over the level's platforms. Collision and shadows keep using config.platforms;
- * this only draws tiles inside each slab and edge trims along its outer boundary, never across a gap.
+ * tiles cover each slab exactly and never cross a gap.
  * Returns the indices of the platforms it covered, so their procedural boxes can be hidden.
  */
 export function buildKitFloor(kit: EnvKit, platforms: PlatformConfig[]): { group: Group; covered: number[] } | null {
-  if (!kit.prototype(KIT.tileA) || !kit.prototype(KIT.tileB) || !kit.prototype(KIT.edge)) return null;
+  if (!kit.prototype(KIT.tileA) || !kit.prototype(KIT.tileB)) return null;
   const covered = platforms.flatMap((platform, i) => (kitFloorable(platform) ? [i] : []));
   if (covered.length === 0) return null;
   const rects = covered.map((i) => rectOf(platforms[i]));
   const tilesA: Matrix4[] = [];
   const tilesB: Matrix4[] = [];
-  const edges: Matrix4[] = [];
 
   rects.forEach((r, n) => {
     const sy = (r.top - (platforms[covered[n]].position[1] - platforms[covered[n]].size[1] / 2)) / TILE_DEPTH;
-    const midX = (r.minX + r.maxX) / 2;
-    const midZ = (r.minZ + r.maxZ) / 2;
-    const probe = EDGE_WIDTH + 0.1;
-    // The kit edge's warning stripe faces -Z at yaw 0; each side turns it to face outward.
-    const sides = {
-      north: !continued(rects, r, midX, r.minZ - probe),
-      south: !continued(rects, r, midX, r.maxZ + probe),
-      west: !continued(rects, r, r.minX - probe, midZ),
-      east: !continued(rects, r, r.maxX + probe, midZ),
-    };
-    const x0 = r.minX + (sides.west ? EDGE_WIDTH : 0);
-    const x1 = r.maxX - (sides.east ? EDGE_WIDTH : 0);
-    const z0 = r.minZ + (sides.north ? EDGE_WIDTH : 0);
-    const z1 = r.maxZ - (sides.south ? EDGE_WIDTH : 0);
-
-    const nx = Math.max(1, Math.ceil((x1 - x0) / TILE - 0.01));
-    const nz = Math.max(1, Math.ceil((z1 - z0) / TILE - 0.01));
-    const tw = (x1 - x0) / nx;
-    const td = (z1 - z0) / nz;
+    const nx = Math.max(1, Math.ceil((r.maxX - r.minX) / TILE - 0.01));
+    const nz = Math.max(1, Math.ceil((r.maxZ - r.minZ) / TILE - 0.01));
+    const tw = (r.maxX - r.minX) / nx;
+    const td = (r.maxZ - r.minZ) / nz;
     for (let ix = 0; ix < nx; ix++) {
       for (let iz = 0; iz < nz; iz++) {
-        const matrix = place(x0 + tw * (ix + 0.5), r.top, z0 + td * (iz + 0.5), 0, tw / TILE, sy, td / TILE);
+        const matrix = place(r.minX + tw * (ix + 0.5), r.top, r.minZ + td * (iz + 0.5), 0, tw / TILE, sy, td / TILE);
         ((ix * 3 + iz * 5 + n) % 7 === 3 ? tilesB : tilesA).push(matrix);
       }
     }
-
-    const run = (from: number, to: number, fixed: number, alongX: boolean, yaw: number) => {
-      const length = to - from;
-      if (length < 0.2) return;
-      const count = Math.max(1, Math.ceil(length / TILE - 0.01));
-      const step = length / count;
-      for (let i = 0; i < count; i++) {
-        const along = from + step * (i + 0.5);
-        edges.push(
-          alongX
-            ? place(along, r.top, fixed, yaw, step / TILE, sy, 1)
-            : place(fixed, r.top, along, yaw, step / TILE, sy, 1),
-        );
-      }
-    };
-    const half = EDGE_WIDTH / 2;
-    if (sides.north) run(r.minX, r.maxX, r.minZ + half, true, 0);
-    if (sides.south) run(r.minX, r.maxX, r.maxZ - half, true, Math.PI);
-    if (sides.west) run(z0, z1, r.minX + half, false, Math.PI / 2);
-    if (sides.east) run(z0, z1, r.maxX - half, false, -Math.PI / 2);
   });
 
   const group = new Group();
@@ -164,7 +121,6 @@ export function buildKitFloor(kit: EnvKit, platforms: PlatformConfig[]): { group
   for (const [name, list] of [
     [KIT.tileA, tilesA],
     [KIT.tileB, tilesB],
-    [KIT.edge, edges],
   ] as const) {
     const mesh = instanceKit(kit, name, list);
     if (mesh) group.add(mesh);
@@ -197,20 +153,15 @@ function keepClear(level: LevelConfig, pillars: [number, number][]): { x: number
   return zones;
 }
 
-/** Directional props face the slab centre; symmetric ones keep the kit's authored yaw. */
+/** The corner post turns toward the slab centre. Cables keep the authored yaw. */
 const CORNER_PROPS: { name: KitName; faces: boolean }[] = [
-  { name: KIT.powerUnit, faces: false },
-  { name: KIT.lamp, faces: false },
-  { name: KIT.maintenanceBox, faces: true },
-  { name: KIT.terminal, faces: true },
-  { name: KIT.energyContainer, faces: true },
-  { name: KIT.stripVertical, faces: true },
-  { name: KIT.cableJunction, faces: false },
+  { name: KIT.corner, faces: true },
+  { name: KIT.cables, faces: false },
 ];
 
 /**
- * Sparse, non-colliding kit props on the outer band of each floor slab: one per clear corner,
- * a cable tray and a floor light strip along the long sides, and warning trims at gap edges.
+ * Sparse, non-colliding kit props on the outer band of each floor slab: a corner post or
+ * cable bundle per clear corner, cables along two rims, and a cable bundle inside a gap edge.
  */
 function buildKitProps(kit: EnvKit, level: LevelConfig, pillars: [number, number][]): Group | null {
   const zones = keepClear(level, pillars);
@@ -222,7 +173,7 @@ function buildKitProps(kit: EnvKit, level: LevelConfig, pillars: [number, number
     bucket.get(name)!.push(matrix);
   };
   const faceYaw = (x: number, z: number, tx: number, tz: number) => Math.atan2(-(tx - x), -(tz - z));
-  const inset = 0.75;
+  const inset = 1.2;
 
   slabs.forEach((r, n) => {
     const w = r.maxX - r.minX;
@@ -242,20 +193,16 @@ function buildKitProps(kit: EnvKit, level: LevelConfig, pillars: [number, number
       put(prop.name, place(x, r.top, z, prop.faces ? faceYaw(x, z, cx, cz) : 0));
     });
 
-    if (w >= 4 && free(cx, r.minZ + 0.45, 0.5)) put(KIT.cableTray, place(cx, r.top, r.minZ + 0.45));
-    // The strip's emitter faces down in the kit; flipped over so it glows up out of the floor.
-    const stripZ = r.maxZ - 0.45;
-    if (w >= 4 && free(cx, stripZ, 0.5)) {
-      put(KIT.strip, new Matrix4().makeTranslation(cx, r.top + 0.06, stripZ).multiply(new Matrix4().makeRotationX(Math.PI)));
-    }
+    if (w >= 4 && free(cx, r.minZ + inset, 0.4)) put(KIT.cables, place(cx, r.top, r.minZ + inset));
+    if (d >= 4 && free(r.minX + inset, cz, 0.4)) put(KIT.cables, place(r.minX + inset, r.top, cz, Math.PI / 2));
 
     for (const other of slabs) {
       if (other === r || Math.abs(other.top - r.top) > 1 || other.maxZ < r.minZ || other.minZ > r.maxZ) continue;
       const z = Math.max(r.minZ, other.minZ) / 2 + Math.min(r.maxZ, other.maxZ) / 2;
       const gapEast = other.minX - r.maxX;
       const gapWest = r.minX - other.maxX;
-      if (gapEast > 0.2 && gapEast < 8) put(KIT.trimWarning, place(r.maxX - 0.5, r.top, z, Math.PI / 2));
-      if (gapWest > 0.2 && gapWest < 8) put(KIT.trimWarning, place(r.minX + 0.5, r.top, z, Math.PI / 2));
+      if (gapEast > 0.2 && gapEast < 8 && free(r.maxX - inset, z, 0.4)) put(KIT.cables, place(r.maxX - inset, r.top, z));
+      if (gapWest > 0.2 && gapWest < 8 && free(r.minX + inset, z, 0.4)) put(KIT.cables, place(r.minX + inset, r.top, z));
     }
   });
 
