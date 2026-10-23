@@ -11,7 +11,19 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { buildLabEnvScene } from './LabEnvironment';
+import { ENV_INTENSITY, buildLabEnvScene } from './LabEnvironment';
+
+/**
+ * Assigns the env map to each material. Explicit maps ignore scene.environmentIntensity in r170,
+ * so the intensity is set per material; clearing the map restores the default of 1.
+ */
+export function setLabEnv(materials: Iterable<MeshStandardMaterial>, texture: Texture | null): void {
+  for (const material of materials) {
+    material.envMap = texture;
+    material.envMapIntensity = texture ? ENV_INTENSITY : 1;
+    material.needsUpdate = true;
+  }
+}
 
 export const LEVEL_ACCENTS = [
   0x5ce1ff, 0xffb15a, 0x9b8cff, 0x3ee0c8, 0x7dffe1, 0xd7e6ff, 0xff8a5c, 0x8ee9ff, 0x9ecbff, 0xffd2a1,
@@ -212,8 +224,7 @@ export function createLabMaterials(): LabMaterials {
     nodeHot,
     shared: new Set(all),
     applyEnv(texture) {
-      for (const material of all) material.envMap = texture;
-      for (const material of all) material.needsUpdate = true;
+      setLabEnv(all, texture);
     },
     setAnisotropy(max) {
       const value = Math.min(8, Math.max(1, max));

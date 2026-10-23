@@ -12,7 +12,7 @@ import {
   Vector3,
 } from 'three';
 
-/** Scene-wide environment reflection strength; the hemisphere fill is rebalanced against it. */
+/** Environment reflection strength for the lab materials (envMapIntensity) and the scene environment; the hemisphere fill is rebalanced against it. */
 export const ENV_INTENSITY = 0.65;
 
 const SUN_DIRECTION = new Vector3(-12, 22, 8).normalize();

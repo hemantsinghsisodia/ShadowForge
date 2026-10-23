@@ -15,8 +15,11 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Vector2 } from 'three';
-import { applyPunch, gradeShader, ZERO_PUNCH, type Punch } from '../effects/PostFX';
+import { applyPunch, gradeShader, ZERO_PUNCH, type Punch, type PunchResult } from '../effects/PostFX';
 import type { QualityProfile } from '../settings/Settings';
+
+/** Soft knee of the bloom high-pass; wide enough that the cut-off does not pop. */
+const BLOOM_KNEE = 0.8;
 
 export class Renderer {
   readonly renderer: WebGLRenderer;
@@ -24,7 +27,8 @@ export class Renderer {
   private grade: ShaderPass | null = null;
   private bloom: UnrealBloomPass | null = null;
   private base = { exposure: 1.08, bloom: 0, ca: 0 };
-  private punchState: Punch = ZERO_PUNCH;
+  private punchState: Readonly<Punch> = ZERO_PUNCH;
+  private readonly scratch: PunchResult = { exposure: 0, bloom: 0, ca: 0, flash: 0 };
   private bloomScale = 1;
   private width = 1;
   private height = 1;
@@ -52,6 +56,12 @@ export class Renderer {
     this.resize();
   }
 
+  /** Pixel ratio the scene is actually rendered at: the composer runs at reduced scale when bloom uses it. */
+  effectivePixelRatio(): number {
+    const dpr = this.renderer.getPixelRatio();
+    return this.composer ? dpr * this.bloomScale : dpr;
+  }
+
   resize(): void {
     this.width = Math.max(1, window.innerWidth);
     this.height = Math.max(1, window.innerHeight);
@@ -67,7 +77,11 @@ export class Renderer {
     this.base.bloom = profile.bloomStrength;
     this.base.ca = profile.chromatic;
     this.punchState = ZERO_PUNCH;
-    this.composer?.dispose();
+    if (this.composer) {
+      // EffectComposer.dispose() does not dispose its passes in r170.
+      for (const pass of this.composer.passes) (pass as { dispose?: () => void }).dispose?.();
+      this.composer.dispose();
+    }
     this.bloom = null;
     if (!profile.bloom && !profile.postFx) {
       this.composer = null;
@@ -84,6 +98,7 @@ export class Renderer {
         profile.bloomRadius,
         profile.bloomThreshold,
       );
+      bloom.materialHighPassFilter.uniforms.smoothWidth.value = BLOOM_KNEE;
       const high = (bloom as unknown as { materialHighPassFilter: ShaderMaterial }).materialHighPassFilter;
       high.fragmentShader = high.fragmentShader.replace(
         'vec4 texel = texture2D( tDiffuse, vUv );',
@@ -118,8 +133,11 @@ export class Renderer {
     }
   }
 
-  /** Add a transient hit on top of the tier base. It lasts until the next punch or presentation rebuild. */
-  punch(p: Punch): void {
+  /**
+   * Add a transient hit on top of the tier base. It lasts until the next punch or presentation rebuild.
+   * The reference is kept and read every frame, so pass a fresh object or a frozen one; never mutate it afterwards.
+   */
+  punch(p: Readonly<Punch>): void {
     this.punchState = p;
   }
 
@@ -133,7 +151,7 @@ export class Renderer {
   }
 
   render(scene: Scene, camera: Camera): void {
-    const out = applyPunch(this.base, this.punchState);
+    const out = applyPunch(this.base, this.punchState, this.scratch);
     this.renderer.toneMappingExposure = out.exposure;
     if (this.bloom) this.bloom.strength = out.bloom;
     if (this.grade) {

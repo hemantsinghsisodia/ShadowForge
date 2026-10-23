@@ -19,4 +19,13 @@ describe('postfx punch', () => {
     expect(gradeShader.uniforms).toHaveProperty('flashColor');
     expect(gradeShader.fragmentShader.match(/== .* \? .* : 0\.0/g)?.length).toBeGreaterThanOrEqual(3);
   });
+
+  it('freezes ZERO_PUNCH', () => expect(Object.isFrozen(ZERO_PUNCH)).toBe(true));
+
+  it('writes into a supplied out object and returns it', () => {
+    const out = { exposure: 9, bloom: 9, ca: 9, flash: 9 };
+    const res = applyPunch({ exposure: 1, bloom: 2, ca: 3 }, { flash: 4, exposure: 1, bloom: 1, ca: 1 }, out);
+    expect(res).toBe(out);
+    expect(out).toEqual({ exposure: 2, bloom: 3, ca: 4, flash: 4 });
+  });
 });

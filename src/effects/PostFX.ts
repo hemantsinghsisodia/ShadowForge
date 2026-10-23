@@ -10,13 +10,25 @@ export interface Punch {
   flashColor?: number;
 }
 
-export const ZERO_PUNCH: Punch = { flash: 0, exposure: 0, bloom: 0, ca: 0 };
+export const ZERO_PUNCH: Readonly<Punch> = Object.freeze({ flash: 0, exposure: 0, bloom: 0, ca: 0 });
+
+export interface PunchResult {
+  exposure: number;
+  bloom: number;
+  ca: number;
+  flash: number;
+}
 
 export function applyPunch(
   base: { exposure: number; bloom: number; ca: number },
-  p: Punch,
-): { exposure: number; bloom: number; ca: number; flash: number } {
-  return { exposure: base.exposure + p.exposure, bloom: base.bloom + p.bloom, ca: base.ca + p.ca, flash: p.flash };
+  p: Readonly<Punch>,
+  out: PunchResult = { exposure: 0, bloom: 0, ca: 0, flash: 0 },
+): PunchResult {
+  out.exposure = base.exposure + p.exposure;
+  out.bloom = base.bloom + p.bloom;
+  out.ca = base.ca + p.ca;
+  out.flash = p.flash;
+  return out;
 }
 
 /** Full-screen grade for ShaderPass: vignette, film grain, a cool tint, a colour flash and chromatic aberration. */

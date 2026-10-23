@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DynamicDrawUsage,
   Points,
   ShaderMaterial,
   type Scene,
@@ -89,6 +90,16 @@ export class ParticleManager {
     this.geometry.setAttribute('aColor', new BufferAttribute(this.colors, 3));
     this.geometry.setAttribute('size', new BufferAttribute(this.sizes, 1));
     this.geometry.setAttribute('alpha', new BufferAttribute(this.alphas, 1));
+    for (const name of ['position', 'aColor', 'size', 'alpha']) {
+      (this.geometry.getAttribute(name) as BufferAttribute).setUsage(DynamicDrawUsage);
+    }
+    // Dust colour is constant: write it once and upload it with the first frame.
+    for (let i = CAP - DUST_MAX; i < CAP; i++) {
+      this.colors[i * 3] = 0.75 * DUST_INTENSITY;
+      this.colors[i * 3 + 1] = 0.88 * DUST_INTENSITY;
+      this.colors[i * 3 + 2] = DUST_INTENSITY;
+    }
+    this.fullUpload = true;
     const material = new ShaderMaterial({
       uniforms: this.uniforms,
       vertexShader: PARTICLE_VERT,
@@ -141,11 +152,16 @@ export class ParticleManager {
     hex: number,
     kind: BurstKind,
     dir?: [number, number, number],
+    intensity: number = KIND_INTENSITY[kind],
   ): void {
     const color = new Color(hex);
-    const intensity = KIND_INTENSITY[kind];
     let left = Math.min(this.budget, CAP - DUST_MAX);
-    for (let p = 0; p + 2 < points.length && left > 0; p += 3) {
+    const count = Math.floor(points.length / 3);
+    if (count === 0 || perPoint <= 0 || left <= 0) return;
+    // Stride across the set when it does not fit, so the budget is not spent on the first points only.
+    const step = Math.max(1, Math.ceil((count * perPoint) / left));
+    for (let i = 0; i < count && left > 0; i += step) {
+      const p = i * 3;
       for (let k = 0; k < perPoint && left > 0; k++, left--) {
         this.spawn(points[p], points[p + 1], points[p + 2], color, kind, intensity, dir);
       }
@@ -269,10 +285,6 @@ export class ParticleManager {
     this.velocities[o] = (Math.random() - 0.5) * 0.2;
     this.velocities[o + 1] = 0.04 + Math.random() * 0.16;
     this.velocities[o + 2] = (Math.random() - 0.5) * 0.2;
-    this.colors[o] = 0.75 * DUST_INTENSITY;
-    this.colors[o + 1] = 0.88 * DUST_INTENSITY;
-    this.colors[o + 2] = DUST_INTENSITY;
-    this.colorDirty = true;
     this.maxLife[index] = 2.5 + Math.random() * 2.5;
     this.life[index] = this.maxLife[index];
     this.baseSize[index] = 1.5 + Math.random() * 2;

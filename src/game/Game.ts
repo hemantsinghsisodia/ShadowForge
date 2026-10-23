@@ -16,7 +16,7 @@ import { CharacterBody } from '../physics/CharacterBody';
 import { CameraRig } from '../player/CameraRig';
 import { PlayerView } from '../player/PlayerView';
 import { SaveManager } from '../save/SaveManager';
-import { initialAppliedQuality, profileFor, type AppliedQuality, type Settings } from '../settings/Settings';
+import { initialAppliedQuality, profileFor, type AppliedQuality, type QualityMode, type Settings } from '../settings/Settings';
 import { ShadowManager } from '../shadows/ShadowManager';
 import { Ui, formatTime, type HudState } from '../ui/Ui';
 import { LevelWorld } from '../world/LevelWorld';
@@ -41,6 +41,7 @@ export class Game {
   private readonly manip = new ManipulationMode();
   private readonly debug: boolean;
   private tier: AppliedQuality;
+  private appliedMode: QualityMode | null = null;
   private config: LevelConfig | null = null;
   private shadows: ShadowManager | null = null;
   private body = new CharacterBody();
@@ -666,8 +667,12 @@ export class Game {
     this.haptics.enabled = settings.haptics;
     this.camera.sensitivity = settings.cameraSensitivity;
     this.camera.invertY = settings.invertY;
-    this.tier = initialAppliedQuality(settings.quality, isCoarsePointer());
-    this.applyTier();
+    if (this.appliedMode !== settings.quality) {
+      // Only a first call or a changed quality mode resets the tier; other settings must not undo an AUTO step-down.
+      this.appliedMode = settings.quality;
+      this.tier = initialAppliedQuality(settings.quality, isCoarsePointer());
+      this.applyTier();
+    }
     this.ui.setTouch(isCoarsePointer());
   }
 
@@ -680,7 +685,7 @@ export class Game {
     this.world.applyShadowSize(profile.shadowMapSize);
     this.particles.setBudget(profile.particles);
     this.particles.setDust(profile.dust);
-    this.particles.setPixelRatio(this.renderer.renderer.getPixelRatio());
+    this.particles.setPixelRatio(this.renderer.effectivePixelRatio());
     this.player.setLamp(profile.playerLight);
     this.resize();
   }

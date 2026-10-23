@@ -86,7 +86,7 @@ export interface QualityProfile {
   shadowMapSize: number;
   particles: number;
   bloom: boolean;
-  /** 1 is full resolution. Phones on MEDIUM use a half-resolution bloom buffer. */
+  /** 1 is full resolution. Phones on MEDIUM render the whole composer (scene and bloom) at this fraction of the pixel ratio. */
   bloomScale: number;
   envMap: boolean;
   beams: boolean;

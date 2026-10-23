@@ -23,7 +23,7 @@ describe.each(SHADERS)('%s', (_name, frag) => {
   });
 });
 
-describe('emissive strengths push glowing parts above the bloom threshold', () => {
+describe('emissive shader strengths use the specified HDR boosts', () => {
   it('forge surface solid edge is boosted', () => {
     expect(FORGE_FRAG).toContain('sedge * 3.2');
   });
