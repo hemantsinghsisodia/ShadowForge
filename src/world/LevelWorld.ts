@@ -205,7 +205,7 @@ export class LevelWorld {
     }
     const ring = new Mesh(
       new TorusGeometry(config.exit.radius, 0.055, 8, 28),
-      new MeshStandardMaterial({ color: 0xb6fff2, emissive: 0x3ee0c8, emissiveIntensity: 1.1, roughness: 0.25 }),
+      new MeshStandardMaterial({ color: 0xb6fff2, emissive: 0x3ee0c8, emissiveIntensity: 2.6, roughness: 0.25 }),
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.set(config.exit.position[0], config.exit.position[1] + 0.08, config.exit.position[2]);
@@ -239,7 +239,7 @@ export class LevelWorld {
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
       const headMat = view.head.material as MeshBasicMaterial;
-      headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 1.4 : 0.12);
+      headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 4.0 : 0.12);
       const dir =
         view.target && volume.spot
           ? new Vector3(volume.spot.dx, volume.spot.dy, volume.spot.dz)
@@ -458,7 +458,7 @@ export class LevelWorld {
       light = spot;
       beam = new Mesh(
         new ConeGeometry(0.16, 0.5, 10),
-        new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
+        new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(4.2) }),
       );
       group.add(beam);
     } else {
@@ -530,7 +530,7 @@ export class LevelWorld {
     ring.position.y = 1.14;
     const icon = new Mesh(
       new BoxGeometry(0.08, 0.08, 0.02),
-      new MeshStandardMaterial({ color: 0x9af6ff, emissive: 0x39e7ff, emissiveIntensity: 1.6, roughness: 0.25 }),
+      new MeshStandardMaterial({ color: 0x9af6ff, emissive: 0x39e7ff, emissiveIntensity: 3.0, roughness: 0.25 }),
     );
     icon.position.y = 1.14;
     group.add(base, button, ring, icon);
