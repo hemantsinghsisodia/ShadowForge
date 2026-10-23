@@ -36,6 +36,7 @@ import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
+import { forgeKit, loadForgeKit } from './ForgeKit';
 import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
@@ -163,6 +164,7 @@ export class LevelWorld {
     lab.floor.color.setHex(LIGHTING.floorTint);
     lab.wall.color.setHex(LIGHTING.wallTint);
     const kitMaterials = new Set<Material>(envKit()?.allMaterials());
+    for (const material of forgeKit()?.allMaterials() ?? []) kitMaterials.add(material);
     this.root.traverse((object) => {
       const mesh = object as Mesh;
       if (!mesh.isMesh) return;
@@ -232,6 +234,7 @@ export class LevelWorld {
     this.root.add(this.underLight, this.underLight.target);
     this.mountDressing();
     const token = ++this.loadToken;
+    void loadForgeKit();
     const kit = envKit();
     if (kit) this.applyKit(kit);
     else
@@ -710,14 +713,16 @@ function railLine(points: Vector3[]): Line {
 
 function disposeObject(object: Object3D): void {
   const kit = envKit();
+  const forge = forgeKit();
+  const owned = (resource: BufferGeometry | Material) => kit?.owns(resource) || forge?.owns(resource);
   object.traverse((child: Object3D) => {
     const mesh = child as Mesh;
     if ((mesh as InstancedMesh).isInstancedMesh) (mesh as InstancedMesh).dispose();
-    if (mesh.geometry && !kit?.owns(mesh.geometry)) mesh.geometry.dispose();
+    if (mesh.geometry && !owned(mesh.geometry)) mesh.geometry.dispose();
     const material = mesh.material;
     const list = Array.isArray(material) ? material : material ? [material] : [];
     for (const entry of list) {
-      if (!sharedMaterials.has(entry) && !kit?.owns(entry)) entry.dispose();
+      if (!sharedMaterials.has(entry) && !owned(entry)) entry.dispose();
     }
   });
 }
