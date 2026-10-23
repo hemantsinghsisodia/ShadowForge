@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { LIGHTING } from './Lighting';
 
 /**
  * Kenney Modular Space Kit subset (public/models/environment/KenneyModularSpace.glb).
@@ -41,6 +42,21 @@ export interface EnvKit {
   merged(name: KitName): { geometry: BufferGeometry; materials: MeshStandardMaterial[] } | null;
   /** Kit geometry and materials live for the whole session and must not be disposed with a level. */
   owns(resource: BufferGeometry | Material): boolean;
+  /** Every distinct kit material, for live re-tinting. */
+  allMaterials(): MeshStandardMaterial[];
+}
+
+/**
+ * Scales the kit base colours (kept in userData.baseColor as a hex number, which survives Material.clone's
+ * JSON copy of userData). Emissive is left alone so glowing parts stay bright. Materials without a base colour are skipped.
+ */
+export function setKitScale(materials: Iterable<Material>, scale: number): void {
+  for (const material of materials) {
+    const base = material.userData.baseColor;
+    const color = (material as MeshStandardMaterial).color;
+    if (typeof base !== 'number' || !color) continue;
+    color.setHex(base).multiplyScalar(scale);
+  }
 }
 
 const URL = `${import.meta.env.BASE_URL}models/environment/KenneyModularSpace.glb`;
@@ -118,6 +134,7 @@ async function fetchKit(): Promise<EnvKit | null> {
         return mergedCache.get(name) ?? null;
       },
       owns: (resource) => owned.has(resource),
+      allMaterials: () => [...new Set(materials.values())],
     };
   } catch (error) {
     console.error(`[EnvKit] could not load ${URL}; keeping procedural environment visuals.`, error);
@@ -130,9 +147,10 @@ function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>
   const hit = cache.get(source);
   if (hit) return hit;
   const src = source as MeshStandardMaterial;
+  const base = src.color.clone();
   const material = new MeshStandardMaterial({
     name: src.name,
-    color: src.color,
+    color: base.clone().multiplyScalar(LIGHTING.kitScale),
     map: src.map,
     metalness: src.metalness,
     roughness: src.roughness,
@@ -140,6 +158,7 @@ function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>
     emissiveIntensity: src.emissiveIntensity,
     side: src.side,
   });
+  material.userData.baseColor = base.getHex();
   source.dispose();
   cache.set(source, material);
   return material;

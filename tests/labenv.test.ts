@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ENV_INTENSITY, LAB_ENV_PANELS, buildLabEnvScene, hemiIntensity } from '../src/world/LabEnvironment';
+import { LAB_ENV_PANELS, buildLabEnvScene } from '../src/world/LabEnvironment';
+import { LIGHTING, hemiIntensity } from '../src/world/Lighting';
 
 describe('lab environment', () => {
   it('balances fill light against the env map', () => {
-    expect(hemiIntensity(true)).toBe(0.9);
-    expect(hemiIntensity(false)).toBe(1.6);
-    expect(ENV_INTENSITY).toBe(0.65);
+    expect(hemiIntensity(true)).toBe(LIGHTING.hemiEnv);
+    expect(hemiIntensity(false)).toBe(LIGHTING.hemiNoEnv);
+    expect(LIGHTING.env).toBe(0.4);
   });
 
   it('has cool side strips and one warm key matching the sun', () => {

@@ -12,9 +12,6 @@ import {
   Vector3,
 } from 'three';
 
-/** Environment reflection strength for the lab materials (envMapIntensity) and the scene environment; the hemisphere fill is rebalanced against it. */
-export const ENV_INTENSITY = 0.65;
-
 const SUN_DIRECTION = new Vector3(-12, 22, 8).normalize();
 const KEY_POSITION = SUN_DIRECTION.clone().multiplyScalar(8);
 
@@ -33,11 +30,6 @@ export const LAB_ENV_PANELS: ReadonlyArray<LabEnvPanel> = [
   { color: 0x9fdcff, intensity: 6, position: [6, 3, 3], size: [8, 0.4] },
   { color: 0xffc890, intensity: 8, position: [KEY_POSITION.x, KEY_POSITION.y, KEY_POSITION.z], size: [3, 3] },
 ];
-
-/** The hemisphere fill steps down when the env map supplies ambient reflection and light. */
-export function hemiIntensity(envMap: boolean): number {
-  return envMap ? 0.9 : 1.6;
-}
 
 function gradientSphere(): Mesh {
   const material = new ShaderMaterial({

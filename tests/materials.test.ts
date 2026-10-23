@@ -1,18 +1,18 @@
 import { MeshStandardMaterial, Texture } from 'three';
 import { describe, expect, it } from 'vitest';
-import { ENV_INTENSITY } from '../src/world/LabEnvironment';
+import { LIGHTING } from '../src/world/Lighting';
 import { setLabEnv } from '../src/world/Materials';
 
 describe('lab material environment', () => {
   const make = () => [new MeshStandardMaterial(), new MeshStandardMaterial({ envMapIntensity: 3 })];
 
-  it('applies ENV_INTENSITY to each material when a map is assigned', () => {
+  it('applies LIGHTING.env to each material when a map is assigned', () => {
     const materials = make();
     const texture = new Texture();
     setLabEnv(materials, texture);
     for (const m of materials) {
       expect(m.envMap).toBe(texture);
-      expect(m.envMapIntensity).toBe(ENV_INTENSITY);
+      expect(m.envMapIntensity).toBe(LIGHTING.env);
     }
   });
 

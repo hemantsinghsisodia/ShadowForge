@@ -19,6 +19,7 @@ import { SaveManager } from '../save/SaveManager';
 import { initialAppliedQuality, profileFor, type AppliedQuality, type QualityMode, type Settings } from '../settings/Settings';
 import { ShadowManager } from '../shadows/ShadowManager';
 import { Ui, formatTime, type HudState } from '../ui/Ui';
+import { LIGHTING } from '../world/Lighting';
 import { LevelWorld } from '../world/LevelWorld';
 
 const raycaster = new Raycaster();
@@ -121,6 +122,10 @@ export class Game {
               resolve(window.__SF?.pos());
             }, ms);
           }),
+        light: (p) => {
+          this.world.applyLighting(p);
+          return { ...LIGHTING };
+        },
         boxes: () =>
           (this.shadows?.collisionBoxes() ?? []).map((box) => ({
             minX: Number(box.minX.toFixed(2)),

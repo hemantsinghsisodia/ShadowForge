@@ -13,6 +13,7 @@ import {
   InstancedMesh,
   Line,
   LineBasicMaterial,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -34,8 +35,8 @@ import type { CasterVolume } from '../shadows/types';
 import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
-import { envKit, loadEnvKit, type EnvKit } from './EnvKit';
-import { ENV_INTENSITY, hemiIntensity } from './LabEnvironment';
+import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
+import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
 import { SpaceBackdrop } from './SpaceBackdrop';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -122,7 +123,7 @@ export class LevelWorld {
       if (this.env) {
         lab.applyEnv(this.env);
         this.scene.environment = this.env;
-        this.scene.environmentIntensity = ENV_INTENSITY;
+        this.scene.environmentIntensity = LIGHTING.env;
       }
     } else {
       this.scene.environment = null;
@@ -130,6 +131,36 @@ export class LevelWorld {
     }
     if (detailChanged && this.bounds) this.mountDressing();
     this.backdrop.setDetail(profile.sky);
+  }
+
+  /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
+  applyLighting(partial: Partial<LightingConfig>): void {
+    Object.assign(LIGHTING, partial);
+    if (this.sun) {
+      this.sun.intensity = LIGHTING.sun;
+      this.sun.color.setHex(LIGHTING.sunColor);
+    }
+    if (this.hemi) this.hemi.intensity = hemiIntensity(this.profile?.envMap ?? true);
+    const envOn = this.env !== null && this.scene.environment === this.env;
+    if (envOn) this.scene.environmentIntensity = LIGHTING.env;
+    lab.floor.color.setHex(LIGHTING.floorTint);
+    lab.wall.color.setHex(LIGHTING.wallTint);
+    const kitMaterials = new Set<Material>(envKit()?.allMaterials());
+    this.root.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) return;
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        if (typeof material.userData.baseColor === 'number') kitMaterials.add(material);
+        // Lab materials and their clones (pillar stone) carry the env map with a per-material intensity.
+        const standard = material as MeshStandardMaterial;
+        if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
+      }
+    });
+    for (const material of lab.shared) {
+      const standard = material as MeshStandardMaterial;
+      if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
+    }
+    setKitScale(kitMaterials, LIGHTING.kitScale);
   }
 
   pulseForge(id: string): void {
@@ -146,7 +177,7 @@ export class LevelWorld {
     this.backdrop.setTint(this.accent, fog);
     this.hemi = new HemisphereLight(0xb7c6dc, 0x243044, hemiIntensity(this.profile?.envMap ?? true));
     this.root.add(this.hemi);
-    this.sun = new DirectionalLight(0xe7eef8, 4.5);
+    this.sun = new DirectionalLight(LIGHTING.sunColor, LIGHTING.sun);
     this.sun.position.set(-12, 22, 8);
     this.applyShadowSize(shadowMapSize);
     this.root.add(this.sun, this.sun.target);
@@ -556,7 +587,7 @@ export class LevelWorld {
     this.env = buildEnvMap(this.gl);
     lab.applyEnv(this.env);
     this.scene.environment = this.env;
-    this.scene.environmentIntensity = ENV_INTENSITY;
+    this.scene.environmentIntensity = LIGHTING.env;
   }
 
   private mountDressing(): void {

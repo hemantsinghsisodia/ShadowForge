@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import type { LightingConfig } from './world/Lighting';
+
 interface ShadowforgeDebug {
   jump: (level: number) => void;
   begin: () => void;
@@ -11,6 +13,7 @@ interface ShadowforgeDebug {
   boxes: () => unknown;
   fps: () => number;
   post: (mode: 'off' | 'bloom' | 'grade' | 'full') => void;
+  light: (p: Partial<LightingConfig>) => LightingConfig;
   bloom: (strength: number, radius: number, threshold: number) => void;
 }
 

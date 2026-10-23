@@ -11,7 +11,8 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { ENV_INTENSITY, buildLabEnvScene } from './LabEnvironment';
+import { buildLabEnvScene } from './LabEnvironment';
+import { LIGHTING } from './Lighting';
 
 /**
  * Assigns the env map to each material. Explicit maps ignore scene.environmentIntensity in r170,
@@ -20,7 +21,7 @@ import { ENV_INTENSITY, buildLabEnvScene } from './LabEnvironment';
 export function setLabEnv(materials: Iterable<MeshStandardMaterial>, texture: Texture | null): void {
   for (const material of materials) {
     material.envMap = texture;
-    material.envMapIntensity = texture ? ENV_INTENSITY : 1;
+    material.envMapIntensity = texture ? LIGHTING.env : 1;
     material.needsUpdate = true;
   }
 }
