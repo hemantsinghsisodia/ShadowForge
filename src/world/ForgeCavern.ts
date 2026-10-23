@@ -12,6 +12,7 @@ import {
   Vector3,
   type BufferGeometry,
   type Material,
+  type Object3D,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/random';
@@ -36,7 +37,8 @@ export { ABYSS_Y };
 const DOME_RADIUS = 150;
 const EMBER_SEED = 1337;
 const NUMERIC_KEYS = ['crackHdr', 'glow', 'flow', 'fogDensity'] as const;
-const BOOLEAN_KEYS = ['embers', 'structures', 'walls'] as const;
+const BOOLEAN_KEYS = ['embers', 'structures', 'walls', 'chains', 'gantry', 'sparks'] as const;
+type BooleanKey = (typeof BOOLEAN_KEYS)[number];
 /** The abyss noise scrolls slowly, so it wraps far later than the embers (which stay on 600). */
 const ABYSS_PERIOD = 6000;
 
@@ -163,6 +165,15 @@ export class ForgeCavern {
   private structureKey: string | null = null;
   private walls: Mesh[] = [];
   private wallKey: string | null = null;
+  /** The objects each boolean layer switch controls. A new layer adds one line; tune and every rebuild apply it. */
+  private readonly visibility: Record<BooleanKey, () => Object3D[]> = {
+    embers: () => (this.embers ? [this.embers.points] : []),
+    structures: () => this.structures,
+    walls: () => this.walls,
+    chains: () => [],
+    gantry: () => [],
+    sparks: () => [],
+  };
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
     uAbyssTime: { value: 0 },
@@ -268,13 +279,16 @@ export class ForgeCavern {
       const value = partial[key];
       if (typeof value === 'boolean') CAVERN[key] = value;
     }
-    if (this.embers) this.embers.points.visible = CAVERN.embers;
-    for (const mesh of this.structures) mesh.visible = CAVERN.structures;
-    for (const mesh of this.walls) mesh.visible = CAVERN.walls;
+    this.applyVisibility();
     this.uniforms.uCrackHdr.value = CAVERN.crackHdr;
     this.uniforms.uGlow.value = CAVERN.glow;
     this.uniforms.uFlow.value = CAVERN.flow;
     return { ...CAVERN };
+  }
+
+  /** Pushes every boolean layer switch in CAVERN onto the objects it controls. */
+  private applyVisibility(): void {
+    for (const key of BOOLEAN_KEYS) for (const object of this.visibility[key]()) object.visible = CAVERN[key];
   }
 
   /** Rebuilds the embers only when the count or the bounds they were seeded for have changed. */
@@ -294,8 +308,8 @@ export class ForgeCavern {
     this.embers = new Embers(seedEmbers(this.emberCount, b, EMBER_SEED));
     this.embers.setTime(this.time);
     this.embers.setPixelRatio(this.pixelRatio);
-    this.embers.points.visible = CAVERN.embers;
     this.group.add(this.embers.points);
+    this.applyVisibility();
   }
 
   /** Rebakes the structures only when the detail, bounds, slabs, seed or kit presence have changed. */
@@ -315,10 +329,8 @@ export class ForgeCavern {
       return;
     }
     this.structureKey = key;
-    for (const mesh of this.structures) {
-      mesh.visible = CAVERN.structures;
-      this.group.add(mesh);
-    }
+    for (const mesh of this.structures) this.group.add(mesh);
+    this.applyVisibility();
   }
 
   /** Rebuilds the rock walls only when the detail, bounds or seed have changed. */
@@ -351,10 +363,10 @@ export class ForgeCavern {
       mesh.rotation.y = side > 0 ? Math.PI : 0;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      mesh.visible = CAVERN.walls;
       this.walls.push(mesh);
       this.group.add(mesh);
     }
+    this.applyVisibility();
   }
 
   private domeGeometry(detail: CavernDetail): BufferGeometry {

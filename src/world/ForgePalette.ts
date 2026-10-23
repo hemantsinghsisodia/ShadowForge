@@ -21,6 +21,9 @@ export const CAVERN = {
   embers: true,
   structures: true,
   walls: true,
+  chains: true,
+  gantry: true,
+  sparks: true,
 };
 
 export const MENU_FOG_DENSITY = 0.045;

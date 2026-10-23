@@ -256,6 +256,138 @@ export function placeStructures(bounds: CavernBounds, slabs: PlatformConfig[], d
     }
   });
   out.push(...towers(bounds, detail, rand));
+  const rail = railLine(bounds, detail);
+  if (rail) out.push(...railPlacements(rail, detail === 'medium' ? MEDIUM_RAIL_COLUMN_SPACING : RAIL_COLUMN_SPACING));
+  return out;
+}
+
+/** Rail beam height (the gantry rides here). */
+export const RAIL_Y = 7.5;
+/** The rail runs this far beyond the corridor edge on the +Z side. */
+export const RAIL_OFFSET = 11;
+/** Gantry trolley speed along the rail, m/s. */
+export const GANTRY_SPEED = 0.8;
+/** Seconds the trolley holds at each end of the rail. */
+export const GANTRY_PAUSE = 2;
+const RAIL_EXTEND = 4;
+const RAIL_COLUMN_SPACING = 12;
+/** Medium thins the rail columns (the rail line itself is shared with high) to stay within 60% of high's piece count. */
+const MEDIUM_RAIL_COLUMN_SPACING = 24;
+const CHAIN_CEILING_Y = 14;
+const CHAIN_FAR_OFFSET = 12;
+const CHAIN_COUNT = { medium: 6, high: 10 } as const;
+
+export interface Rail {
+  x0: number;
+  x1: number;
+  z: number;
+  y: number;
+}
+
+/**
+ * The gantry rail along the +Z side: the tower x range (always taken from the high-detail sites, so medium and high share
+ * one rail) extended by 4 m each way, RAIL_OFFSET beyond the corridor edge. Null on low.
+ */
+export function railLine(bounds: CavernBounds, detail: CavernDetail): Rail | null {
+  if (detail === 'low') return null;
+  const sites = towerSites(bounds, 'high');
+  if (sites.length === 0) return null;
+  const { midZ, halfDepth } = corridor(bounds);
+  const xs = sites.map((s) => s.x);
+  return { x0: Math.min(...xs) - RAIL_EXTEND, x1: Math.max(...xs) + RAIL_EXTEND, z: midZ + halfDepth + RAIL_OFFSET, y: RAIL_Y };
+}
+
+/**
+ * Pillar columns from the abyss up to the rail every `spacing` m (12 by default). Both ends are always included, so the last gap
+ * may be shorter. A beam links each neighbouring pair at rail height.
+ */
+export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING): Placement[] {
+  const span = rail.x1 - rail.x0;
+  const xs: number[] = [];
+  for (let x = rail.x0; x < rail.x1 - 1e-9; x += spacing) xs.push(x);
+  xs.push(rail.x1);
+  const scaleY = (rail.y - ABYSS_Y) / PILLAR_H;
+  const out: Placement[] = xs.map((x) => ({
+    piece: FORGE_KIT.pillar,
+    position: [x, ABYSS_Y, rail.z],
+    rotationY: 0,
+    scale: [1, scaleY, 1],
+    top: rail.y,
+    role: 'tower',
+  }));
+  if (span <= 0) return out;
+  for (let i = 1; i < xs.length; i++) {
+    const length = xs[i] - xs[i - 1];
+    out.push({
+      piece: FORGE_KIT.beam,
+      position: [(xs[i] + xs[i - 1]) / 2, rail.y, rail.z],
+      rotationY: 0,
+      scale: [length / 2, 1, 1],
+      top: rail.y + BEAM_H,
+      role: 'link',
+    });
+  }
+  return out;
+}
+
+/**
+ * Trolley x at time t: x0 -> x1 at GANTRY_SPEED, hold GANTRY_PAUSE, back to x0, hold. Closed form with a positive modulo, so the
+ * GLSL mirror is a plain `mod` and four `if`s. Period = 2 * (len / GANTRY_SPEED + GANTRY_PAUSE).
+ */
+export function gantryX(t: number, rail: Rail): number {
+  const travel = (rail.x1 - rail.x0) / GANTRY_SPEED;
+  const period = 2 * (travel + GANTRY_PAUSE);
+  const u = ((t % period) + period) % period;
+  if (u < travel) return rail.x0 + GANTRY_SPEED * u;
+  if (u < travel + GANTRY_PAUSE) return rail.x1;
+  if (u < 2 * travel + GANTRY_PAUSE) return rail.x1 - GANTRY_SPEED * (u - travel - GANTRY_PAUSE);
+  return rail.x0;
+}
+
+/** Pendulum angle in radians. */
+export function swayAngle(t: number, phase: number, amp: number, period: number): number {
+  return amp * Math.sin((2 * Math.PI * t) / period + phase);
+}
+
+export interface ChainSite {
+  x: number;
+  z: number;
+  pivotY: number;
+  length: number;
+  phase: number;
+  amp: number;
+  period: number;
+}
+
+/**
+ * Hanging chains. Medium 6, high 10, low 0. The first half hang from the rail; the rest hang from the dark ceiling on the -Z
+ * side. x is spread evenly (cell centres) along the rail's range. Length, amp, period and phase are seeded.
+ */
+export function chainSites(bounds: CavernBounds, detail: CavernDetail, seed: number): ChainSite[] {
+  const rail = railLine(bounds, detail);
+  if (!rail || detail === 'low') return [];
+  const count = CHAIN_COUNT[detail];
+  const half = count / 2;
+  const { midZ, halfDepth } = corridor(bounds);
+  const rand = mulberry32(seed);
+  const out: ChainSite[] = [];
+  for (let i = 0; i < count; i++) {
+    const onRail = i < half;
+    const k = onRail ? i : i - half;
+    const length = 4 + rand() * 3;
+    const amp = 0.05 + rand() * 0.04;
+    const period = 5 + rand() * 3;
+    const phase = rand() * Math.PI * 2;
+    out.push({
+      x: rail.x0 + ((k + 0.5) / half) * (rail.x1 - rail.x0),
+      z: onRail ? rail.z : midZ - (halfDepth + CHAIN_FAR_OFFSET),
+      pivotY: onRail ? RAIL_Y : CHAIN_CEILING_Y,
+      length,
+      phase,
+      amp,
+      period,
+    });
+  }
   return out;
 }
 

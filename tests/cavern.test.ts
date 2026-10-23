@@ -181,6 +181,26 @@ describe('ForgeCavern', () => {
     expect(abyss(cavern).geometry).toBe(geometry);
   });
 
+  it('tunes chains, gantry and sparks as booleans', () => {
+    const cavern = new ForgeCavern();
+    try {
+      expect(CAVERN.chains).toBe(true);
+      expect(CAVERN.gantry).toBe(true);
+      expect(CAVERN.sparks).toBe(true);
+      const out = cavern.tune({ chains: false, gantry: false, sparks: false });
+      expect(out.chains).toBe(false);
+      expect(out.gantry).toBe(false);
+      expect(out.sparks).toBe(false);
+      cavern.tune({ chains: 3 as never, gantry: 'x' as never });
+      expect(CAVERN.chains).toBe(false);
+      expect(CAVERN.gantry).toBe(false);
+    } finally {
+      CAVERN.chains = true;
+      CAVERN.gantry = true;
+      CAVERN.sparks = true;
+    }
+  });
+
   it('tunes structures and walls as booleans only', () => {
     const cavern = new ForgeCavern();
     try {
