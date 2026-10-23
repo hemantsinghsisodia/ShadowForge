@@ -24,7 +24,7 @@ describe('particle shaders', () => {
   });
 
   it('halves the rendered alpha of dust motes', () => {
-    expect(DUST_ALPHA).toBe(0.5);
+    expect(DUST_ALPHA).toBe(0.3);
   });
 });
 

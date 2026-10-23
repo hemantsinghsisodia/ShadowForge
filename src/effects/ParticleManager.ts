@@ -48,7 +48,7 @@ export type BurstKind = 'spark' | 'ember' | 'shard';
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
 export const DUST_INTENSITY = 0.6;
 /** Rendered-alpha multiplier for dust motes so they stay subtle atmosphere. */
-export const DUST_ALPHA = 0.5;
+export const DUST_ALPHA = 0.3;
 
 /** Round additive motes: forge sparks, embers, collapse shards and beam dust. */
 export class ParticleManager {

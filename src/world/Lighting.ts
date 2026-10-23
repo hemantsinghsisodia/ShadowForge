@@ -18,14 +18,14 @@ export interface LightingConfig {
 }
 
 export const LIGHTING: LightingConfig = {
-  sun: 1.6,
+  sun: 0.55,
   sunColor: 0xc8d6ee,
-  hemiEnv: 0.35,
-  hemiNoEnv: 0.7,
-  env: 0.4,
-  floorTint: 0x6a7584,
-  wallTint: 0x5a6472,
-  kitScale: 0.55,
+  hemiEnv: 0.15,
+  hemiNoEnv: 0.4,
+  env: 0.25,
+  floorTint: 0x4d5664,
+  wallTint: 0x434b58,
+  kitScale: 0.28,
 };
 
 /** The hemisphere fill steps down when the env map supplies ambient reflection and light. */

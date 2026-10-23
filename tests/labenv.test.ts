@@ -6,7 +6,7 @@ describe('lab environment', () => {
   it('balances fill light against the env map', () => {
     expect(hemiIntensity(true)).toBe(LIGHTING.hemiEnv);
     expect(hemiIntensity(false)).toBe(LIGHTING.hemiNoEnv);
-    expect(LIGHTING.env).toBe(0.4);
+    expect(LIGHTING.env).toBe(0.25);
   });
 
   it('has cool side strips and one warm key matching the sun', () => {

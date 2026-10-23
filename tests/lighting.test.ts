@@ -5,14 +5,14 @@ import { LIGHTING, hemiIntensity } from '../src/world/Lighting';
 
 describe('lighting config', () => {
   it('has the moody starting values', () => {
-    expect(LIGHTING.sun).toBe(1.6);
+    expect(LIGHTING.sun).toBe(0.55);
     expect(LIGHTING.sunColor).toBe(0xc8d6ee);
-    expect(LIGHTING.hemiEnv).toBe(0.35);
-    expect(LIGHTING.hemiNoEnv).toBe(0.7);
-    expect(LIGHTING.env).toBe(0.4);
-    expect(LIGHTING.floorTint).toBe(0x6a7584);
-    expect(LIGHTING.wallTint).toBe(0x5a6472);
-    expect(LIGHTING.kitScale).toBe(0.55);
+    expect(LIGHTING.hemiEnv).toBe(0.15);
+    expect(LIGHTING.hemiNoEnv).toBe(0.4);
+    expect(LIGHTING.env).toBe(0.25);
+    expect(LIGHTING.floorTint).toBe(0x4d5664);
+    expect(LIGHTING.wallTint).toBe(0x434b58);
+    expect(LIGHTING.kitScale).toBe(0.28);
   });
 
   it('picks the hemisphere fill by env map availability', () => {
