@@ -18,6 +18,8 @@ import { prefersReducedMotion } from '../src/core/device';
 import { PerspectiveCamera } from 'three';
 import { BASE_FOV, CameraRig } from '../src/player/CameraRig';
 import { FORGE_LIGHT_PEAK, ForgeSurface, forgeLightPoint } from '../src/shadows/ForgeSurface';
+import { surfaceDef } from '../src/levels/evaluate';
+import { forgeFloor, forgeRamp, forgeWall } from '../src/levels/helpers';
 import type { SurfaceDef } from '../src/shadows/types';
 
 function frame(): ForgeFrame {
@@ -221,12 +223,28 @@ describe('ForgeSurface charge', () => {
 });
 
 describe('forgeLightPoint', () => {
-  it('sits 0.6 along the plate normal (axisU x axisV) from the origin', () => {
-    const out = { x: 0, y: 0, z: 0 };
-    forgeLightPoint(surface([1, 0, 0], [0, 0, -1]), 0.6, out);
+  const out = { x: 0, y: 0, z: 0 };
+
+  it('lifts a floor above the slab, 0.6 along the up normal', () => {
+    const def = surfaceDef(forgeFloor('f', 2, -3, 4, 4, { origin: [2, 1, -3] }));
+    forgeLightPoint(def, 0.6, out);
     expect(out.x).toBeCloseTo(2, 10);
     expect(out.y).toBeCloseTo(1.6, 10);
     expect(out.z).toBeCloseTo(-3, 10);
+  });
+
+  it('lifts a ramp up and off its sloped face', () => {
+    const def = surfaceDef(forgeRamp('r', 0, 0, 3, 4, 2));
+    forgeLightPoint(def, 0.6, out);
+    expect(out.y).toBeGreaterThan(def.origin.y);
+    expect(Math.hypot(out.x - def.origin.x, out.y - def.origin.y, out.z - def.origin.z)).toBeCloseTo(0.6, 10);
+  });
+
+  it('keeps a wall on its raw normal, facing the player (-x)', () => {
+    const def = surfaceDef(forgeWall('w', 5, 2, 0, 4, 3));
+    forgeLightPoint(def, 0.6, out);
+    expect(out.x).toBeLessThan(def.origin.x);
+    expect(out.y).toBeCloseTo(def.origin.y, 10);
   });
 
   it('peaks at 120', () => {

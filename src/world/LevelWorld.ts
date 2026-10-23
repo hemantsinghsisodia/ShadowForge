@@ -184,8 +184,9 @@ export class LevelWorld {
 
   /** Plate charge-up on one surface, 0..1. A null id applies to every surface (use it to reset). */
   setForgeCharge(surfaceId: string | null, c: number): void {
+    const clamped = Math.max(0, Math.min(1, c));
     for (const forge of this.forges) {
-      if (surfaceId === null || forge.def.id === surfaceId) forge.setCharge(c);
+      if (surfaceId === null || forge.def.id === surfaceId) forge.setCharge(clamped);
     }
   }
 

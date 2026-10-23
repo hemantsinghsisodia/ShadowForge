@@ -84,13 +84,17 @@ void main() {
 /** Peak intensity of the single forge PointLight (candela-scale, matching the lamp units). */
 export const FORGE_LIGHT_PEAK = 120;
 
-/** Writes `origin + normal * lift` into `out`, the normal being normalize(axisU x axisV). Allocation-free. */
+/**
+ * Writes `origin + normal * lift` into `out`. The normal is normalize(axisU x axisV); for every kind but 'wall' it is
+ * flipped to face up, since floors and ramps are authored with axes whose cross product points down. Allocation-free.
+ */
 export function forgeLightPoint(def: SurfaceDef, lift: number, out: { x: number; y: number; z: number }): void {
   const { axisU: u, axisV: v } = def;
   const nx = u.y * v.z - u.z * v.y;
   const ny = u.z * v.x - u.x * v.z;
   const nz = u.x * v.y - u.y * v.x;
-  const inv = lift / (Math.hypot(nx, ny, nz) || 1);
+  const flip = def.kind !== 'wall' && ny < 0 ? -1 : 1;
+  const inv = (flip * lift) / (Math.hypot(nx, ny, nz) || 1);
   out.x = def.origin.x + nx * inv;
   out.y = def.origin.y + ny * inv;
   out.z = def.origin.z + nz * inv;
