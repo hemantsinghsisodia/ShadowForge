@@ -40,7 +40,10 @@ import { cavernFog, levelAtmosphere } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
 import { SpaceBackdrop } from './SpaceBackdrop';
+import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
+
+installHeightFog();
 
 interface LampView {
   cfg: LightConfig;
