@@ -119,7 +119,8 @@ export function buildKitFloor(kit: EnvKit, platforms: PlatformConfig[]): { group
     [KIT.tileA, tilesA],
     [KIT.tileB, tilesB],
   ] as const) {
-    const mesh = instanceKit(kit, name, list);
+    // Flat, double-sided tiles are only walked on. Cast from a point light they shadow themselves, so they only receive.
+    const mesh = instanceKit(kit, name, list, false);
     if (mesh) group.add(mesh);
   }
   return { group, covered };

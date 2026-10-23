@@ -1,7 +1,7 @@
 import type { LevelConfig } from '../levels/LevelData';
 
 /** Shadow-map settings for the one puzzle lamp that casts real shadows on High. */
-export const LAMP_SHADOW = { mapSize: 512, bias: -0.0005, normalBias: 0.02, radius: 2 } as const;
+export const LAMP_SHADOW = { mapSize: 512, bias: -0.002, normalBias: 0.05, radius: 2 } as const;
 
 /**
  * The id of the lamp that casts real shadows: the first spotlight, else the lamp nearest (XZ) to the first surface's origin.

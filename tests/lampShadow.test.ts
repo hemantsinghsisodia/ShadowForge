@@ -1,4 +1,7 @@
+import { InstancedMesh, MeshStandardMaterial, PlaneGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
+import { KIT, type EnvKit } from '../src/world/EnvKit';
+import { buildKitFloor } from '../src/world/LabDressing';
 import { LEVELS, getLevel } from '../src/levels';
 import { LAMP_SHADOW, pickShadowLamp } from '../src/world/LampShadow';
 
@@ -37,6 +40,29 @@ describe('pickShadowLamp', () => {
   });
 
   it('exposes the shadow settings', () => {
-    expect(LAMP_SHADOW).toEqual({ mapSize: 512, bias: -0.0005, normalBias: 0.02, radius: 2 });
+    expect(LAMP_SHADOW).toEqual({ mapSize: 512, bias: -0.002, normalBias: 0.05, radius: 2 });
+  });
+});
+
+describe('kit floor shadows', () => {
+  it('builds tile instances that receive but never cast shadows', () => {
+    const part = { geometry: new PlaneGeometry(4, 4), material: new MeshStandardMaterial() };
+    const kit = {
+      prototype: (name: string) => (name === KIT.tileA || name === KIT.tileB ? [part] : null),
+      merged: () => null,
+      owns: () => false,
+      allMaterials: () => [part.material],
+    } as unknown as EnvKit;
+    const floor = buildKitFloor(kit, [{ position: [0, -0.25, 0], size: [8, 0.5, 8] }]);
+    expect(floor).not.toBeNull();
+    const meshes: InstancedMesh[] = [];
+    floor!.group.traverse((child) => {
+      if ((child as InstancedMesh).isInstancedMesh) meshes.push(child as InstancedMesh);
+    });
+    expect(meshes.length).toBeGreaterThan(0);
+    for (const mesh of meshes) {
+      expect(mesh.castShadow).toBe(false);
+      expect(mesh.receiveShadow).toBe(true);
+    }
   });
 });
