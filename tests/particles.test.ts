@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY } from '../src/effects/ParticleManager';
+import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY, DUST_ALPHA } from '../src/effects/ParticleManager';
 
 describe('particle shaders', () => {
   it('declares its own colour attribute instead of the built-in one', () => {
@@ -20,5 +20,9 @@ describe('particle shaders', () => {
   it('pushes burst kinds above the bloom threshold and keeps dust below', () => {
     expect(KIND_INTENSITY).toEqual({ spark: 3.0, shard: 2.5, ember: 2.0 });
     expect(DUST_INTENSITY).toBe(0.6);
+  });
+
+  it('halves the rendered alpha of dust motes', () => {
+    expect(DUST_ALPHA).toBe(0.5);
   });
 });

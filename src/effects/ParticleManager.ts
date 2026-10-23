@@ -46,6 +46,8 @@ export type BurstKind = 'spark' | 'ember' | 'shard';
 /** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
 export const DUST_INTENSITY = 0.6;
+/** Rendered-alpha multiplier for dust motes so they stay subtle atmosphere. */
+export const DUST_ALPHA = 0.5;
 
 /** Round additive motes: forge sparks, embers, collapse shards and beam dust. */
 export class ParticleManager {
@@ -251,7 +253,7 @@ export class ParticleManager {
     this.positions[o + 1] += this.velocities[o + 1] * dt;
     this.positions[o + 2] += this.velocities[o + 2] * dt;
     const ratio = Math.max(0, this.life[index] / Math.max(0.05, this.maxLife[index]));
-    this.alphas[index] = ratio;
+    this.alphas[index] = index >= CAP - DUST_MAX ? ratio * DUST_ALPHA : ratio;
     this.sizes[index] = this.baseSize[index] * (0.35 + ratio * 0.65);
     if (this.life[index] <= 0) {
       this.positions[o + 1] = -999;
@@ -273,6 +275,6 @@ export class ParticleManager {
     this.colorDirty = true;
     this.maxLife[index] = 2.5 + Math.random() * 2.5;
     this.life[index] = this.maxLife[index];
-    this.baseSize[index] = 3 + Math.random() * 4;
+    this.baseSize[index] = 1.5 + Math.random() * 2;
   }
 }

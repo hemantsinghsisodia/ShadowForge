@@ -24,8 +24,8 @@ describe('quality profiles', () => {
 
   it('tunes bloom per tier', () => {
     const m = profileFor('medium', false), h = profileFor('high', false);
-    expect([m.bloomStrength, m.bloomRadius, m.bloomThreshold]).toEqual([0.45, 0.35, 0.9]);
-    expect([h.bloomStrength, h.bloomRadius, h.bloomThreshold]).toEqual([0.65, 0.45, 0.85]);
+    expect([m.bloomStrength, m.bloomRadius, m.bloomThreshold]).toEqual([0.45, 0.35, 2.8]);
+    expect([h.bloomStrength, h.bloomRadius, h.bloomThreshold]).toEqual([0.6, 0.45, 2.5]);
     expect(h.chromatic).toBe(0.0012);
     expect(m.chromatic).toBe(0);
     expect(profileFor('low', true).exposure).toBe(1.05);
