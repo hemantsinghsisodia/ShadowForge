@@ -71,7 +71,10 @@ describe('dust colour', () => {
     const geo = (pm as unknown as { geometry: BufferGeometry }).geometry;
     const colors = geo.getAttribute('aColor');
     const dustSlot = 359;
-    expect(colors.getZ(dustSlot)).toBeCloseTo(DUST_INTENSITY, 5);
+    expect(colors.getX(dustSlot)).toBeCloseTo((0xff / 255) * DUST_INTENSITY, 5);
+    expect(colors.getY(dustSlot)).toBeCloseTo((0xd0 / 255) * DUST_INTENSITY, 5);
+    expect(colors.getZ(dustSlot)).toBeCloseTo((0xa0 / 255) * DUST_INTENSITY, 5);
+    expect(colors.getX(dustSlot)).toBeGreaterThan(colors.getZ(dustSlot));
     pm.setDust(10);
     pm.update(0.016);
     const flag = (pm as unknown as { colorDirty: boolean }).colorDirty;

@@ -39,7 +39,7 @@ import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
 import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
-import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
+import { buildDressing, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
@@ -488,7 +488,17 @@ export class LevelWorld {
       const floor = buildKitFloor(kit, this.config.platforms);
       if (floor) {
         this.root.add(floor.group);
-        for (const index of floor.covered) for (const view of this.platformViews[index] ?? []) view.visible = false;
+        for (const index of floor.covered) {
+          const [slab, ...trim] = this.platformViews[index] ?? [];
+          const platform = this.config.platforms[index];
+          // The slab stays visible so its sides read as thickness under the kit tile; trim strips would poke through.
+          if (slab && platform) {
+            const { scaleY, offsetY } = tuckUnderTile(platform.size[1]);
+            slab.scale.y = scaleY;
+            slab.position.y = platform.position[1] + offsetY;
+          }
+          for (const view of trim) view.visible = false;
+        }
       }
       if (!this.dressingKit) this.mountDressing();
     } catch (error) {

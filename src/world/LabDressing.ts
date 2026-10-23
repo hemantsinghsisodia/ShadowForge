@@ -3,6 +3,11 @@ import type { LevelConfig, PlatformConfig } from '../levels/LevelData';
 import { instanceKit, KIT, type EnvKit, type KitName } from './EnvKit';
 import type { LabMaterials } from './Materials';
 
+/** Pulls a slab box 0.01 shorter, bottom fixed, so its top sits just under the kit tile and only the sides show. */
+export function tuckUnderTile(height: number): { scaleY: number; offsetY: number } {
+  return { scaleY: (height - 0.01) / height, offsetY: -0.005 };
+}
+
 export interface RoomBounds {
   minX: number;
   maxX: number;

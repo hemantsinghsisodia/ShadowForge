@@ -47,6 +47,8 @@ export type BurstKind = 'spark' | 'ember' | 'shard';
 /** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
 export const DUST_INTENSITY = 0.6;
+/** Warm ash 0xffd0a0, written raw (not colour-managed) like the burst colours since the shader does no conversion. */
+const DUST_COLOR = { r: 0xff / 255, g: 0xd0 / 255, b: 0xa0 / 255 };
 /** Rendered-alpha multiplier for dust motes so they stay subtle atmosphere. */
 export const DUST_ALPHA = 0.3;
 
@@ -95,9 +97,9 @@ export class ParticleManager {
     }
     // Dust colour is constant: write it once and upload it with the first frame.
     for (let i = CAP - DUST_MAX; i < CAP; i++) {
-      this.colors[i * 3] = 0.75 * DUST_INTENSITY;
-      this.colors[i * 3 + 1] = 0.88 * DUST_INTENSITY;
-      this.colors[i * 3 + 2] = DUST_INTENSITY;
+      this.colors[i * 3] = DUST_COLOR.r * DUST_INTENSITY;
+      this.colors[i * 3 + 1] = DUST_COLOR.g * DUST_INTENSITY;
+      this.colors[i * 3 + 2] = DUST_COLOR.b * DUST_INTENSITY;
     }
     this.fullUpload = true;
     const material = new ShaderMaterial({
