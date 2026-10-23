@@ -692,6 +692,7 @@ export class Game {
     this.particles.setBudget(profile.particles);
     this.particles.setDust(profile.dust);
     this.particles.setPixelRatio(this.renderer.effectivePixelRatio());
+    this.world.cavern.setPixelRatio(this.renderer.effectivePixelRatio());
     this.player.setLamp(profile.playerLight);
     this.resize();
   }

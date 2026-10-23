@@ -23,6 +23,9 @@ export const CAVERN = {
 
 export const MENU_FOG_DENSITY = 0.045;
 
+/** World Y of the molten abyss surface. */
+export const ABYSS_Y = -9;
+
 const rgbA = { r: 0, g: 0, b: 0 };
 const rgbB = { r: 0, g: 0, b: 0 };
 

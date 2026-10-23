@@ -1,6 +1,7 @@
 import { BackSide, Color, Group, Mesh, PlaneGeometry, ShaderMaterial, SphereGeometry, type BufferGeometry, type Vector3 } from 'three';
+import { Embers, seedEmbers } from '../effects/Embers';
 import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT } from './CavernShaders';
-import { CAVERN, FORGE, moltenPulse } from './ForgePalette';
+import { ABYSS_Y, CAVERN, FORGE, moltenPulse } from './ForgePalette';
 
 export type CavernDetail = 'low' | 'medium' | 'high';
 export interface CavernBounds {
@@ -11,9 +12,10 @@ export interface CavernBounds {
 }
 
 export const MENU_BOUNDS: CavernBounds = { minX: -4.5, maxX: 4.5, minZ: -3, maxZ: 3 };
-export const ABYSS_Y = -9;
+export { ABYSS_Y };
 
 const DOME_RADIUS = 150;
+const EMBER_SEED = 1337;
 const NUMERIC_KEYS = ['crackHdr', 'glow', 'flow', 'fogDensity'] as const;
 
 /** The forge cavern around the level: a dome that rides the camera and a molten abyss under the floor. */
@@ -26,6 +28,11 @@ export class ForgeCavern {
   private bounds: CavernBounds = MENU_BOUNDS;
   private readonly domeMesh: Mesh;
   private readonly abyssMesh: Mesh;
+  private embers: Embers | null = null;
+  private emberCount = 0;
+  private emberBounds: CavernBounds | null = null;
+  private time = 0;
+  private pixelRatio = 1;
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
     uTime: { value: 0 },
@@ -57,8 +64,9 @@ export class ForgeCavern {
   }
 
   /** Rebuilds the tier-dependent resources only when the detail changes. */
-  // The ember budget is consumed by the ember system (Task 6); only the surface tiers rebuild here.
-  setDetail(detail: CavernDetail, _embers: number): void {
+  setDetail(detail: CavernDetail, embers: number): void {
+    this.emberCount = Math.max(0, Math.floor(embers));
+    this.syncEmbers();
     if (detail === this.detail) return;
     this.detail = detail;
     this.domeMesh.geometry.dispose();
@@ -79,13 +87,21 @@ export class ForgeCavern {
     geometry.rotateX(-Math.PI / 2);
     this.abyssMesh.geometry = geometry;
     this.abyssMesh.position.set((minX + maxX) / 2, ABYSS_Y, (minZ + maxZ) / 2);
+    this.syncEmbers();
   }
 
   follow(camera: Vector3): void {
     this.dome.position.copy(camera);
   }
 
+  setPixelRatio(dpr: number): void {
+    this.pixelRatio = dpr;
+    this.embers?.setPixelRatio(dpr);
+  }
+
   update(time: number): void {
+    this.time = time;
+    this.embers?.setTime(time);
     this.uniforms.uTime.value = time % 600;
     this.uniforms.uPulse.value = moltenPulse(time);
   }
@@ -97,10 +113,32 @@ export class ForgeCavern {
       if (typeof value === 'number' && Number.isFinite(value)) CAVERN[key] = value;
     }
     if (typeof partial.embers === 'boolean') CAVERN.embers = partial.embers;
+    if (this.embers) this.embers.points.visible = CAVERN.embers;
     this.uniforms.uCrackHdr.value = CAVERN.crackHdr;
     this.uniforms.uGlow.value = CAVERN.glow;
     this.uniforms.uFlow.value = CAVERN.flow;
     return { ...CAVERN };
+  }
+
+  /** Rebuilds the embers only when the count or the bounds they were seeded for have changed. */
+  private syncEmbers(): void {
+    const b = this.bounds;
+    const e = this.emberBounds;
+    const same = e !== null && e.minX === b.minX && e.maxX === b.maxX && e.minZ === b.minZ && e.maxZ === b.maxZ;
+    const built = this.embers ? this.embers.points.geometry.getAttribute('position').count : 0;
+    if (same && built === this.emberCount) return;
+    if (this.embers) {
+      this.group.remove(this.embers.points);
+      this.embers.dispose();
+      this.embers = null;
+    }
+    this.emberBounds = { ...b };
+    if (this.emberCount <= 0) return;
+    this.embers = new Embers(seedEmbers(this.emberCount, b, EMBER_SEED));
+    this.embers.setTime(this.time);
+    this.embers.setPixelRatio(this.pixelRatio);
+    this.embers.points.visible = CAVERN.embers;
+    this.group.add(this.embers.points);
   }
 
   private domeGeometry(detail: CavernDetail): BufferGeometry {
