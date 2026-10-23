@@ -296,6 +296,8 @@ const CHAIN_CEILING_Y = 14;
 const CHAIN_FAR_OFFSET = 12;
 /** Rail columns stand this far back from the trolley line (away from the corridor), so the hanging chain, hook and sparks clear them. */
 const RAIL_COLUMN_SETBACK = 0.6;
+/** The rail beams sit this far back too, so their z-span (0.19 to 0.41) overlaps the column footprint (0.32 to 0.88) and rests on it. The trolley line stays at rail.z. */
+const RAIL_BEAM_SETBACK = 0.3;
 /** Rail-hung chains keep at least this much x clearance from every rail column and +Z tower. */
 const CHAIN_CLEARANCE = 1.0;
 /** Nudged chains land this much beyond the clearance, so rounding cannot undercut it. */
@@ -334,7 +336,7 @@ function railColumnXs(rail: Rail, spacing: number): number[] {
  * Pillar columns from the abyss up to the rail every `spacing` m (12 by default). Both ends are always included, so the last gap
  * may be shorter. A beam links each neighbouring pair at rail height. The columns stand RAIL_COLUMN_SETBACK m back from the
  * trolley line, on `side` (+1 when the rail is on the +Z side of the corridor, -1 on the -Z side), so nothing hanging from the
- * rail passes through them; the beams stay on the line itself.
+ * rail passes through them; the beams sit RAIL_BEAM_SETBACK back so they overlap the columns in z. The trolley stays on rail.z.
  */
 export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING, side: 1 | -1 = 1): Placement[] {
   const span = rail.x1 - rail.x0;
@@ -353,7 +355,7 @@ export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING, side: 
     const length = xs[i] - xs[i - 1];
     out.push({
       piece: FORGE_KIT.beam,
-      position: [(xs[i] + xs[i - 1]) / 2, rail.y, rail.z],
+      position: [(xs[i] + xs[i - 1]) / 2, rail.y, rail.z + RAIL_BEAM_SETBACK * side],
       rotationY: 0,
       scale: [length / 2, 1, 1],
       top: rail.y + BEAM_H,

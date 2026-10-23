@@ -372,8 +372,14 @@ describe('gantry rail and chains', () => {
             expect(Math.abs(c.position[2] - rail.z) - 0.28).toBeGreaterThanOrEqual(0.25);
             expect(c.position[2]).toBeCloseTo(rail.z + 0.6, 9);
           }
-          for (const b of placeStructures(bounds, level.platforms, detail, 1).filter((p) => isRailPiece(p) && p.piece === 'SHF_Structure_Beam')) {
-            expect(b.position[2]).toBeCloseTo(rail.z, 9);
+          const beams = placeStructures(bounds, level.platforms, detail, 1).filter((p) => isRailPiece(p) && p.piece === 'SHF_Structure_Beam');
+          expect(beams.length).toBeGreaterThan(0);
+          for (const b of beams) {
+            expect(b.position[2]).toBeCloseTo(rail.z + 0.3, 9);
+            // Every beam's z-span (half-depth 0.11) overlaps every column's (half-width 0.28): no floating beams.
+            for (const c of columns) {
+              expect(Math.min(b.position[2] + 0.11, c.position[2] + 0.28) - Math.max(b.position[2] - 0.11, c.position[2] - 0.28)).toBeGreaterThan(0);
+            }
           }
         }
       });
