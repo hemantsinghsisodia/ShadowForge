@@ -98,6 +98,8 @@ export interface QualityProfile {
   msaa: number;
   /** Cavern detail. High is the same on phones and desktops. */
   cavern: 'low' | 'medium' | 'high';
+  /** Whether the forge PointLight exists. Off on Low and on phones at Medium, where one more dynamic light is too costly. */
+  forgeLight: boolean;
   /** Ember particle budget. 0 disables them. */
   embers: number;
   bloomStrength: number;
@@ -124,6 +126,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       dressingDetail: 'low',
       msaa: 0,
       cavern: 'low',
+      forgeLight: false,
       embers: 0,
       bloomStrength: 0,
       bloomRadius: 0,
@@ -147,6 +150,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       dressingDetail: 'high',
       msaa: coarse ? 2 : 4,
       cavern: 'medium',
+      forgeLight: !coarse,
       embers: coarse ? 120 : 200,
       bloomStrength: 0.4,
       bloomRadius: 0.35,
@@ -169,6 +173,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     dressingDetail: 'high',
     msaa: 4,
     cavern: 'high',
+    forgeLight: true,
     embers: 400,
     bloomStrength: 0.5,
     bloomRadius: 0.4,

@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   PointLight,
+  ShaderMaterial,
   SpotLight,
   TorusGeometry,
   Vector3,
@@ -27,12 +28,13 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
-import { createObsidianMaterial } from '../effects/Obsidian';
+import { RISE_DELAY, collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
+import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
 import type { QualityProfile } from '../settings/Settings';
 import type { CasterVolume } from '../shadows/types';
-import { ForgeSurface } from '../shadows/ForgeSurface';
+import { FORGE_LIGHT_PEAK, ForgeSurface, forgeLightPoint } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
@@ -56,6 +58,15 @@ interface LampView {
   glow: BeamView;
   light: PointLight | SpotLight;
   target: Object3D | null;
+}
+
+/** One surface's obsidian: a single instanced mesh plus its rise / idle / collapse clock. */
+interface SolidView {
+  key: string;
+  mesh: InstancedMesh;
+  material: ShaderMaterial;
+  mode: SolidMode;
+  t: number;
 }
 
 const lab = createLabMaterials();
@@ -91,12 +102,21 @@ export class LevelWorld {
   /** X range the sun's shadow camera covers; follows the level, restored by every `applyShadowSize`. */
   private shadowFrame = { centreX: 0, halfX: 40 };
   private accent = new Color(0x5ce1ff);
+  /** The one light that swells at the plate during a forge. Medium / high cavern tiers only; never added or removed per frame. */
+  private forgeLight: PointLight | null = null;
+  private readonly forgePoint = { x: 0, y: 0, z: 0 };
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
   private gl: WebGLRenderer | null = null;
   private env: Texture | null = null;
   private profile: QualityProfile | null = null;
-  private solidLayout = '';
+  private readonly solidViews = new Map<string, SolidView>();
+  private solidDt = 0;
+  /** Tiny obsidian mesh drawn for one frame after load so the instanced program compiles before the first forge. */
+  private prewarm: InstancedMesh | null = null;
+  private prewarmFrames = 0;
+  private readonly risePending = new Set<string>();
+  private readonly collapsePending = new Set<string>();
   private platformViews: Mesh[][] = [];
   private loadToken = 0;
   private dressingKit = false;
@@ -150,6 +170,52 @@ export class LevelWorld {
       this.mountRims();
     }
     this.cavern.setDetail(profile.cavern, profile.embers);
+    this.syncForgeLight();
+  }
+
+  /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */
+  private syncForgeLight(): void {
+    const want = this.config !== null && this.profile !== null && this.profile.forgeLight;
+    if (want && !this.forgeLight) {
+      this.forgeLight = new PointLight(this.accent, 0, 7, 2);
+      this.forgeLight.castShadow = false;
+      this.root.add(this.forgeLight);
+    } else if (!want && this.forgeLight) {
+      this.root.remove(this.forgeLight);
+      this.forgeLight = null;
+    }
+  }
+
+  /** Plate charge-up on one surface, 0..1. A null id applies to every surface (use it to reset). */
+  setForgeCharge(surfaceId: string | null, c: number): void {
+    const clamped = Math.max(0, Math.min(1, c));
+    for (const forge of this.forges) {
+      if (surfaceId === null || forge.def.id === surfaceId) forge.setCharge(clamped);
+    }
+  }
+
+  /** Swells the forge light at `surfaceId`'s plate: centre + normal * 0.6, intensity k * FORGE_LIGHT_PEAK. A null id (or Low tier) leaves it dark. */
+  setForgeLight(surfaceId: string | null, k: number): void {
+    const light = this.forgeLight;
+    if (!light) return;
+    const forge = surfaceId === null ? undefined : this.forges.find((f) => f.def.id === surfaceId);
+    if (!forge) {
+      light.intensity = 0;
+      return;
+    }
+    forgeLightPoint(forge.def, 0.6, this.forgePoint);
+    light.position.set(this.forgePoint.x, this.forgePoint.y, this.forgePoint.z);
+    light.intensity = k * FORGE_LIGHT_PEAK;
+  }
+
+  /** Marks `surfaceId` so the next `sync` raises its new obsidian out of the plate instead of popping it in. */
+  beginRise(surfaceId: string): void {
+    this.risePending.add(surfaceId);
+  }
+
+  /** Marks `surfaceId` so the next `sync` recedes its obsidian, glowing hot, instead of removing it at once. */
+  beginCollapse(surfaceId: string): void {
+    this.collapsePending.add(surfaceId);
   }
 
   /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
@@ -191,6 +257,11 @@ export class LevelWorld {
       if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
     }
     setKitScale(kitMaterials, LIGHTING.kitScale);
+  }
+
+  /** The level's accent colour as sRGB hex, for sparks that should match the forge. */
+  accentHex(): number {
+    return this.accent.getHex();
   }
 
   pulseForge(id: string): void {
@@ -272,6 +343,7 @@ export class LevelWorld {
       this.forges.push(forge);
       this.root.add(forge.mesh);
     }
+    this.syncForgeLight();
     for (const console of config.consoles) {
       const group = this.makeConsole();
       group.position.set(console.position[0], console.position[1], console.position[2]);
@@ -300,6 +372,38 @@ export class LevelWorld {
     column.position.set(config.exit.position[0], 1.8, config.exit.position[2]);
     this.column = column;
     this.root.add(column);
+    this.mountPrewarm(config);
+  }
+
+  /**
+   * Medium / High only: keeps one tiny obsidian instance (the same material and shadow flags as a real one) in the
+   * scene for a couple of frames, so the instanced program compiles during load instead of hitching the first forge.
+   * `renderer.compile` is not used: it needs a camera and renders to the canvas, while the game draws into the
+   * composer's target, so the program it built would not be the one the first forge needs.
+   */
+  private mountPrewarm(config: LevelConfig): void {
+    this.dropPrewarm();
+    if (!this.profile || this.profile.cavern === 'low') return;
+    const p = config.platforms[0]?.position ?? [0, 0, 0];
+    const box = { minX: p[0], minY: p[1], minZ: p[2], maxX: p[0], maxY: p[1], maxZ: p[2], climbable: false, nx: 0, ny: 0, nz: 0 };
+    const material = createObsidianMaterial(1, this.accent);
+    material.uniforms.rise.value = 0;
+    const mesh = buildObsidianMesh([box], material);
+    mesh.scale.setScalar(0.0001);
+    mesh.frustumCulled = false;
+    this.root.add(mesh);
+    this.prewarm = mesh;
+    this.prewarmFrames = 2;
+  }
+
+  private dropPrewarm(): void {
+    const mesh = this.prewarm;
+    if (!mesh) return;
+    this.prewarm = null;
+    this.root.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.dispose();
+    (mesh.material as ShaderMaterial).dispose();
   }
 
   sync(shadows: ShadowManager): void {
@@ -411,62 +515,70 @@ export class LevelWorld {
     }
     this.menu.rotation.y = Math.sin(this.time * 0.15) * 0.18;
     for (const forge of this.forges) forge.setTime(this.time);
+    this.solidDt = dt;
+    this.solidViews.forEach(this.tickSolid);
+    if (this.prewarm && this.root.visible && --this.prewarmFrames <= 0) this.dropPrewarm();
   }
 
+  /** Bound once so the per-frame `forEach` allocates nothing. */
+  private readonly tickSolid = (view: SolidView, id: string): void => {
+    if (view.mode === 'idle') return;
+    const step = stepSolid(view, this.solidDt);
+    view.material.uniforms.rise.value = step.rise;
+    view.material.uniforms.hot.value = step.hot;
+    if (step.done) this.removeSolid(id, view);
+  };
+
   private rebuildSolid(shadows: ShadowManager): void {
-    const chunks: string[] = [];
-    const stabs = new Map<string, number>();
-    for (const [id, frozen] of shadows.solid) {
-      const stab = shadows.stability.get(id);
-      if (!stab?.forged) continue;
-      chunks.push(`${id}:${frozen.join('')}`);
-      stabs.set(id, stab.value);
-    }
-    const layout = chunks.join('|');
-    if (layout === this.solidLayout) {
-      for (const child of this.solidGroup.children) {
-        const mesh = child as Mesh;
-        const material = mesh.material as { uniforms?: { stab?: { value: number } } };
-        const value = stabs.get(mesh.userData.surfaceId as string);
-        if (value !== undefined && material.uniforms?.stab) material.uniforms.stab.value = value;
-      }
-      return;
-    }
-    this.solidLayout = layout;
-    for (const child of [...this.solidGroup.children]) {
-      this.solidGroup.remove(child);
-      const mesh = child as Mesh;
-      mesh.geometry.dispose();
-      const material = mesh.material;
-      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
-    }
     for (const [id, frozen] of shadows.solid) {
       const def = shadows.defs.get(id);
       const stab = shadows.stability.get(id);
-      if (!def || !stab?.forged) continue;
-      for (const box of maskToBoxes(def, frozen)) {
-        const width = Math.max(0.05, box.maxX - box.minX);
-        const height = Math.max(0.08, box.maxY - box.minY);
-        const depth = Math.max(0.05, box.maxZ - box.minZ);
-        const mesh = new Mesh(new BoxGeometry(width, height, depth), createObsidianMaterial(stab.value, this.accent));
-        mesh.position.set((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2, (box.minZ + box.maxZ) / 2);
-        mesh.userData.surfaceId = id;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        this.solidGroup.add(mesh);
+      const view = this.solidViews.get(id);
+      if (!def || !stab?.forged) {
+        // Collapsing views live on until they finish; anything else goes now, or starts collapsing if marked.
+        if (view && view.mode !== 'collapse') {
+          if (this.collapsePending.has(id)) {
+            // A surface still rising recedes from where it stands instead of popping to full height first.
+            view.t = collapseTimeFor(view.mode === 'rise' ? riseProgress(view.t) : 1);
+            view.mode = 'collapse';
+            view.material.uniforms.hot.value = 1;
+          } else this.removeSolid(id, view);
+        }
+        continue;
       }
+      const key = `${frozen.join('')}:forged`;
+      if (view && view.mode !== 'collapse' && view.key === key) {
+        view.material.uniforms.stab.value = stab.value;
+        continue;
+      }
+      if (view) this.removeSolid(id, view);
+      const boxes = maskToBoxes(def, frozen);
+      if (boxes.length === 0) continue;
+      const rising = this.risePending.has(id);
+      const material = createObsidianMaterial(stab.value, this.accent);
+      material.uniforms.rise.value = rising ? 0 : 1;
+      const mesh = buildObsidianMesh(boxes, material);
+      this.solidGroup.add(mesh);
+      this.solidViews.set(id, { key, mesh, material, mode: rising ? 'rise' : 'idle', t: rising ? -RISE_DELAY : 0 });
     }
+    this.risePending.clear();
+    this.collapsePending.clear();
+  }
+
+  private removeSolid(id: string, view: SolidView): void {
+    this.solidViews.delete(id);
+    this.solidGroup.remove(view.mesh);
+    view.mesh.geometry.dispose();
+    view.mesh.dispose();
+    view.material.dispose();
   }
 
   private clearLevel(): void {
     this.hideGuides();
-    for (const child of [...this.solidGroup.children]) {
-      this.solidGroup.remove(child);
-      const mesh = child as Mesh;
-      mesh.geometry.dispose();
-      const material = mesh.material;
-      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
-    }
+    this.dropPrewarm();
+    for (const [id, view] of [...this.solidViews]) this.removeSolid(id, view);
+    this.risePending.clear();
+    this.collapsePending.clear();
     for (const forge of this.forges) {
       this.root.remove(forge.mesh);
       forge.dispose();
@@ -476,12 +588,12 @@ export class LevelWorld {
     this.lamps.clear();
     this.casterGroups.clear();
     this.casterKeys.clear();
-    this.solidLayout = '';
     this.exit = null;
     this.column = null;
     this.sun = null;
     this.hemi = null;
     this.underLight = null;
+    this.forgeLight = null;
     this.bounds = null;
     this.pillars = [];
     this.platformViews = [];

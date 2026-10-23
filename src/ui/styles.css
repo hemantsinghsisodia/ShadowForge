@@ -223,6 +223,17 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 #error-banner { pointer-events: auto; border-color: #ff8d7a; top: auto; bottom: 20px; }
 
+/* Low tier only: stands in for the post-processing flash. Above the canvas, below #ui. */
+.flash-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: #fff4e0;
+  mix-blend-mode: screen;
+  opacity: 0;
+  visibility: hidden;
+}
+
 #rotate {
   position: absolute;
   inset: 0;

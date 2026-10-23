@@ -28,6 +28,8 @@ uniform sampler2D maskMap;
 uniform vec2 cells;
 uniform float time;
 uniform float wave;
+uniform float charge;
+uniform float scan;
 uniform vec3 color;
 varying vec2 vUv;
 
@@ -56,14 +58,15 @@ void main() {
   vec2 hex = abs(fract(row) - 0.5);
   float grid = smoothstep(0.42, 0.5, max(hex.x, hex.y * 0.85));
   float flow = hash(floor(cell) + floor(time * 2.0));
-  float scan = 0.55 + 0.45 * sin(cell.y * 3.1 - time * 4.0);
+  float band = 0.55 + 0.45 * sin(cell.y * 3.1 - scan);
   float ripple = 0.5 + 0.5 * sin(vUv.x * 18.0 - time * 2.2 + flow);
   float age = time - wave;
   float ring = wave > 0.0 ? (1.0 - smoothstep(0.0, 0.45, abs(length(vUv - 0.5) * 2.2 - age * 1.6))) : 0.0;
   float dissolve = hash(floor(cell * 2.0));
   float broken = solid * (1.0 - smoothstep(stab - 0.15, stab + 0.05, dissolve));
   vec3 base = vec3(0.012, 0.025, 0.04);
-  vec3 previewCol = color * (0.12 + 0.28 * scan * ripple) + color * pedge * 2.6 + color * flow * 0.08;
+  vec3 previewCol = color * (0.12 + 0.28 * band * ripple) + color * pedge * 2.6 + color * flow * 0.08;
+  previewCol *= (1.0 + 1.5 * charge);
   vec3 hot = mix(vec3(1.0, 0.22, 0.12), color, clamp(stab, 0.0, 1.0));
   vec3 solidCol = hot * (0.55 + 0.35 * ripple) + color * sedge * 3.2;
   solidCol += vec3(1.0, 0.25, 0.15) * broken * 2.5;
@@ -79,11 +82,33 @@ void main() {
 }
 `;
 
+/** Peak intensity of the single forge PointLight (candela-scale, matching the lamp units). */
+export const FORGE_LIGHT_PEAK = 120;
+
+/**
+ * Writes `origin + normal * lift` into `out`. The normal is normalize(axisU x axisV); for every kind but 'wall' it is
+ * flipped to face up, since floors and ramps are authored with axes whose cross product points down. Allocation-free.
+ */
+export function forgeLightPoint(def: SurfaceDef, lift: number, out: { x: number; y: number; z: number }): void {
+  const { axisU: u, axisV: v } = def;
+  const nx = u.y * v.z - u.z * v.y;
+  const ny = u.z * v.x - u.x * v.z;
+  const nz = u.x * v.y - u.y * v.x;
+  const flip = def.kind !== 'wall' && ny < 0 ? -1 : 1;
+  const inv = (flip * lift) / (Math.hypot(nx, ny, nz) || 1);
+  out.x = def.origin.x + nx * inv;
+  out.y = def.origin.y + ny * inv;
+  out.z = def.origin.z + nz * inv;
+}
+
 export class ForgeSurface {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
   private readonly texture: DataTexture;
   private readonly pixels: Uint8Array;
+  /** Scan phase in radians, accumulated on the CPU so a changing charge speeds the scan up without jumping the phase. */
+  private scanPhase = 0;
+  private lastTime = 0;
 
   constructor(readonly def: SurfaceDef) {
     const { cols, rows, sizeU, sizeV } = def;
@@ -127,6 +152,8 @@ export class ForgeSurface {
         cells: { value: new Vector2(cols, rows) },
         time: { value: 0 },
         wave: { value: -10 },
+        charge: { value: 0 },
+        scan: { value: 0 },
         color: { value: new Vector3(0.35, 0.88, 1) },
       },
       vertexShader: VERT,
@@ -153,7 +180,16 @@ export class ForgeSurface {
   }
 
   setTime(time: number): void {
+    const dt = Math.min(0.1, Math.max(0, time - this.lastTime));
+    this.lastTime = time;
+    this.scanPhase += dt * (4 + 8 * (this.material.uniforms.charge.value as number));
+    this.material.uniforms.scan.value = this.scanPhase;
     this.material.uniforms.time.value = time;
+  }
+
+  /** Plate charge-up, 0..1: brightens the preview and speeds the scan. 0 leaves the visuals unchanged. */
+  setCharge(c: number): void {
+    this.material.uniforms.charge.value = c;
   }
 
   /** Solidify wave, measured from the current shader clock. */

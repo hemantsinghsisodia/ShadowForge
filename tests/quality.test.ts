@@ -54,6 +54,17 @@ describe('quality profiles', () => {
   });
 });
 
+describe('forge light gate', () => {
+  it('is on for high and desktop medium, off for low and phone medium', () => {
+    expect(profileFor('high', false).forgeLight).toBe(true);
+    expect(profileFor('high', true).forgeLight).toBe(true);
+    expect(profileFor('medium', false).forgeLight).toBe(true);
+    expect(profileFor('medium', true).forgeLight).toBe(false);
+    expect(profileFor('low', false).forgeLight).toBe(false);
+    expect(profileFor('low', true).forgeLight).toBe(false);
+  });
+});
+
 describe('nextTier', () => {
   it('drops a tier when the newest window is under 42 fps', () =>
     expect(nextTier([40], 'high', 'auto', false)).toBe('medium'));

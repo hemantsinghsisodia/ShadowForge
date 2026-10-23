@@ -44,8 +44,26 @@ void main() {
 
 export type BurstKind = 'spark' | 'ember' | 'shard';
 
-/** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
+/** Fixed colour multiplier for embers; sparks and shards are luminance-targeted via `kindIntensity`. Dust stays below the bloom threshold. */
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
+/** Linear luma targets that sparks and shards are scaled to, so dark hues still clear the bloom threshold. */
+export const SPARK_TARGET_LUMA = 3.0;
+export const SHARD_TARGET_LUMA = 1.6;
+const lumaScratch = new Color();
+
+/** Linear Rec709 luma of `hex`. */
+export function luminance(hex: number): number {
+  lumaScratch.set(hex);
+  return 0.2126 * lumaScratch.r + 0.7152 * lumaScratch.g + 0.0722 * lumaScratch.b;
+}
+
+/** Spark and shard colours are scaled toward SPARK_/SHARD_TARGET_LUMA (clamped to [1, 12]); embers keep their fixed value. */
+export function kindIntensity(hex: number, kind: BurstKind): number {
+  if (kind === 'ember') return KIND_INTENSITY.ember;
+  const target = kind === 'shard' ? SHARD_TARGET_LUMA : SPARK_TARGET_LUMA;
+  return Math.min(12, Math.max(1, target / Math.max(0.05, luminance(hex))));
+}
+
 export const DUST_INTENSITY = 0.6;
 /** Warm ash 0xffd0a0: the raw bytes are treated as linear on purpose, which gives dust a pale warm-ash tint. */
 const DUST_COLOR = { r: 0xff / 255, g: 0xd0 / 255, b: 0xa0 / 255 };
@@ -140,7 +158,7 @@ export class ParticleManager {
     count: number,
     hex: number,
     kind: BurstKind = 'spark',
-    intensity: number = KIND_INTENSITY[kind],
+    intensity: number = kindIntensity(hex, kind),
   ): void {
     const color = new Color(hex);
     const n = Math.min(count, this.budget, CAP - DUST_MAX);
@@ -154,7 +172,7 @@ export class ParticleManager {
     hex: number,
     kind: BurstKind,
     dir?: [number, number, number],
-    intensity: number = KIND_INTENSITY[kind],
+    intensity: number = kindIntensity(hex, kind),
   ): void {
     const color = new Color(hex);
     let left = Math.min(this.budget, CAP - DUST_MAX);

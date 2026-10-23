@@ -57,6 +57,11 @@ export class Renderer {
     this.resize();
   }
 
+  /** True when the post-processing composer is active, i.e. the grade pass can draw the full-screen flash. */
+  hasComposer(): boolean {
+    return this.composer !== null;
+  }
+
   /** Pixel ratio the scene is actually rendered at: the composer runs at reduced scale when bloom uses it. */
   effectivePixelRatio(): number {
     const dpr = this.renderer.getPixelRatio();
@@ -136,7 +141,8 @@ export class Renderer {
 
   /**
    * Add a transient hit on top of the tier base. It lasts until the next punch or presentation rebuild.
-   * The reference is kept and read every frame, so pass a fresh object or a frozen one; never mutate it afterwards.
+   * The reference is kept and read every frame, so a caller may mutate one object in place between frames.
+   * Never mutate ZERO_PUNCH, which is shared.
    */
   punch(p: Readonly<Punch>): void {
     this.punchState = p;
