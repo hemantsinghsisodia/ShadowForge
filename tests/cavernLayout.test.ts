@@ -18,6 +18,7 @@ import {
   placeStructures,
   railLine,
   railPlacements,
+  sunShadowFrame,
   swayAngle,
   towerSites,
   type Placement,
@@ -479,4 +480,35 @@ describe('gantry rail and chains', () => {
       }
     });
   });
+});
+
+describe('sunShadowFrame', () => {
+  it('keeps short levels on the original frame', () => {
+    expect(sunShadowFrame({ minX: -10, maxX: 10, minZ: 0, maxZ: 0 })).toEqual({ centreX: 0, halfX: 40 });
+    expect(sunShadowFrame(levelBounds(LEVELS[0].platforms))).toEqual({ centreX: 0, halfX: 40 });
+  });
+
+  it('re-centres a level that does not fit the origin frame', () => {
+    const frame = sunShadowFrame({ minX: -12, maxX: 62, minZ: 0, maxZ: 0 });
+    expect(frame.centreX).toBe(25);
+    expect(frame.halfX).toBeGreaterThanOrEqual(41);
+  });
+
+  it('falls back to the original frame with no platforms', () => {
+    expect(sunShadowFrame(levelBounds([]))).toEqual({ centreX: 0, halfX: 40 });
+  });
+
+  it('widens beyond 40 for very long levels', () => {
+    expect(sunShadowFrame({ minX: 0, maxX: 200, minZ: 0, maxZ: 0 })).toEqual({ centreX: 100, halfX: 104 });
+  });
+
+  for (const level of LEVELS) {
+    it(`covers all of level ${level.id}`, () => {
+      const { minX, maxX } = levelBounds(level.platforms);
+      const { centreX, halfX } = sunShadowFrame(levelBounds(level.platforms));
+      expect(minX).toBeGreaterThanOrEqual(centreX - halfX);
+      expect(maxX).toBeLessThanOrEqual(centreX + halfX);
+      expect(halfX).toBeGreaterThanOrEqual(40);
+    });
+  }
 });

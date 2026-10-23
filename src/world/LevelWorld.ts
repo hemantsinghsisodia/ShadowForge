@@ -40,7 +40,7 @@ import { forgeKit, loadForgeKit } from './ForgeKit';
 import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
-import { levelBounds } from './CavernLayout';
+import { levelBounds, sunShadowFrame } from './CavernLayout';
 import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -88,6 +88,8 @@ export class LevelWorld {
   private rims: Group | null = null;
   private pillars: Mesh[] = [];
   private bounds: RoomBounds | null = null;
+  /** X range the sun's shadow camera covers; follows the level, restored by every `applyShadowSize`. */
+  private shadowFrame = { centreX: 0, halfX: 40 };
   private accent = new Color(0x5ce1ff);
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
@@ -205,7 +207,10 @@ export class LevelWorld {
     this.hemi = new HemisphereLight(0xb7c6dc, LIGHTING.hemiGround, hemiIntensity(this.profile?.envMap ?? true));
     this.root.add(this.hemi);
     this.sun = new DirectionalLight(LIGHTING.sunColor, LIGHTING.sun);
-    this.sun.position.set(-12, 22, 8);
+    this.bounds = levelBounds(config.platforms);
+    this.shadowFrame = sunShadowFrame(this.bounds);
+    this.sun.position.set(-12 + this.shadowFrame.centreX, 22, 8);
+    this.sun.target.position.set(this.shadowFrame.centreX, 0, 0);
     this.applyShadowSize(shadowMapSize);
     this.root.add(this.sun, this.sun.target);
 
@@ -225,7 +230,6 @@ export class LevelWorld {
       }
       this.platformViews.push(views);
     }
-    this.bounds = levelBounds(config.platforms);
     const { minX, maxX } = this.bounds;
     this.cavern.mount(this.bounds, config.platforms, config.id);
     const midX = (minX + maxX) / 2;
@@ -379,8 +383,8 @@ export class LevelWorld {
     const cam = this.sun.shadow.camera;
     cam.near = 1;
     cam.far = 80;
-    cam.left = -40;
-    cam.right = 40;
+    cam.left = -this.shadowFrame.halfX;
+    cam.right = this.shadowFrame.halfX;
     cam.top = 40;
     cam.bottom = -40;
     cam.updateProjectionMatrix();

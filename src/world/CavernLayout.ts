@@ -97,6 +97,22 @@ export function levelBounds(platforms: PlatformConfig[]): CavernBounds {
   return { minX, maxX, minZ, maxZ };
 }
 
+/** Half extent of the sun's shadow box when the level fits around the origin. */
+const SUN_FRAME_HALF = 40;
+const SUN_FRAME_MARGIN = 4;
+
+/**
+ * The X range the sun's shadow camera covers. Levels that fit the original box around the origin keep it
+ * exactly (centre 0, half 40); longer or off-centre levels re-centre on the level and widen to fit.
+ */
+export function sunShadowFrame(bounds: CavernBounds): { centreX: number; halfX: number } {
+  if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.maxX)) return { centreX: 0, halfX: SUN_FRAME_HALF };
+  const half = (bounds.maxX - bounds.minX) / 2;
+  const mid = (bounds.minX + bounds.maxX) / 2;
+  if (Math.abs(mid) + half + SUN_FRAME_MARGIN <= SUN_FRAME_HALF) return { centreX: 0, halfX: SUN_FRAME_HALF };
+  return { centreX: mid, halfX: Math.max(SUN_FRAME_HALF, half + SUN_FRAME_MARGIN) };
+}
+
 /** Centre line and half width of the play corridor along Z. */
 export function corridor(bounds: CavernBounds): { midZ: number; halfDepth: number } {
   return { midZ: (bounds.minZ + bounds.maxZ) / 2, halfDepth: (bounds.maxZ - bounds.minZ) / 2 };
