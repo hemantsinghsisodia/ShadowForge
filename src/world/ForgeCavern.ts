@@ -17,6 +17,7 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { mulberry32 } from '../core/random';
 import { Embers, seedEmbers } from '../effects/Embers';
+import { Sparks, seedSparks } from '../effects/Sparks';
 import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT, ROCK_FRAG, ROCK_VERT } from './CavernShaders';
 import type { PlatformConfig } from '../levels/LevelData';
 import { chainSites, corridor, placeStructures, railLine, type Placement } from './CavernLayout';
@@ -37,6 +38,7 @@ export { ABYSS_Y };
 
 const DOME_RADIUS = 150;
 const EMBER_SEED = 1337;
+const SPARK_SEED = 4242;
 const NUMERIC_KEYS = ['crackHdr', 'glow', 'flow', 'fogDensity'] as const;
 const BOOLEAN_KEYS = ['embers', 'structures', 'walls', 'chains', 'gantry', 'sparks'] as const;
 type BooleanKey = (typeof BOOLEAN_KEYS)[number];
@@ -168,6 +170,8 @@ export class ForgeCavern {
   private wallKey: string | null = null;
   private readonly motion = new CavernMotion();
   private motionKey: string | null = null;
+  private sparks: Sparks | null = null;
+  private sparkKey: string | null = null;
   /** The objects each boolean layer switch controls. A new layer adds one line; tune and every rebuild apply it. */
   private readonly visibility: Record<BooleanKey, () => Object3D[]> = {
     embers: () => (this.embers ? [this.embers.points] : []),
@@ -175,7 +179,7 @@ export class ForgeCavern {
     walls: () => this.walls,
     chains: () => this.motion.chainObjects,
     gantry: () => this.motion.gantryObjects,
-    sparks: () => [],
+    sparks: () => (this.sparks ? [this.sparks.points] : []),
   };
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
@@ -224,6 +228,7 @@ export class ForgeCavern {
     }
     this.syncStructures();
     this.syncMotion();
+    this.syncSparks();
     this.syncWalls();
   }
 
@@ -252,6 +257,7 @@ export class ForgeCavern {
     this.syncEmbers();
     this.syncStructures();
     this.syncMotion();
+    this.syncSparks();
     this.syncWalls();
   }
 
@@ -267,11 +273,13 @@ export class ForgeCavern {
   setPixelRatio(dpr: number): void {
     this.pixelRatio = dpr;
     this.embers?.setPixelRatio(dpr);
+    this.sparks?.setPixelRatio(dpr);
   }
 
   update(time: number): void {
     this.time = time;
     this.embers?.setTime(time);
+    this.sparks?.setTime(time);
     this.uniforms.uAbyssTime.value = time % ABYSS_PERIOD;
     this.uniforms.uPulse.value = moltenPulse(time);
     this.motion.update(time);
@@ -353,6 +361,31 @@ export class ForgeCavern {
       return;
     }
     this.motionKey = key;
+    this.applyVisibility();
+  }
+
+  /**
+   * Rebuilds the trolley sparks only when the detail, bounds or spark count have changed. Medium takes round(embers / 4),
+   * high embers / 4 (floored), low and a level with no rail none.
+   */
+  private syncSparks(): void {
+    const quarter = this.emberCount / 4;
+    const count = this.detail === 'low' ? 0 : this.detail === 'medium' ? Math.round(quarter) : Math.floor(quarter);
+    const key = [this.detail, JSON.stringify(this.bounds), count].join('|');
+    if (key === this.sparkKey) return;
+    this.sparkKey = key;
+    if (this.sparks) {
+      this.group.remove(this.sparks.points);
+      this.sparks.dispose();
+      this.sparks = null;
+    }
+    const rail = railLine(this.bounds, this.detail);
+    if (!rail || count <= 0) return;
+    const { midZ } = corridor(this.bounds);
+    this.sparks = new Sparks(seedSparks(count, SPARK_SEED, rail.z >= midZ ? 1 : -1), rail);
+    this.sparks.setTime(this.time);
+    this.sparks.setPixelRatio(this.pixelRatio);
+    this.group.add(this.sparks.points);
     this.applyVisibility();
   }
 

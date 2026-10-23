@@ -3,6 +3,7 @@ import { FORGE_FRAG } from '../src/shadows/ForgeSurface';
 import { OBSIDIAN_FRAG } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
 import { EMBER_FRAG, EMBER_VERT } from '../src/effects/Embers';
+import { SPARK_FRAG, SPARK_VERT } from '../src/effects/Sparks';
 import { PARTICLE_FRAG } from '../src/effects/ParticleManager';
 import { DOME_FRAG, MOLTEN_FRAG, ROCK_FRAG, ROCK_VERT } from '../src/world/CavernShaders';
 
@@ -13,6 +14,7 @@ const SHADERS: Array<[string, string]> = [
   ['DOME_FRAG', DOME_FRAG],
   ['MOLTEN_FRAG', MOLTEN_FRAG],
   ['ROCK_FRAG', ROCK_FRAG],
+  ['SPARK_FRAG', SPARK_FRAG],
 ];
 
 describe.each(SHADERS)('%s', (_name, frag) => {
@@ -80,7 +82,7 @@ describe('rock wall shader', () => {
 describe('smoothstep edges', () => {
   it('never reverses numeric-literal edges in any shader', () => {
     const call = /smoothstep\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,/g;
-    const all = [...SHADERS, ['EMBER_VERT', EMBER_VERT], ['EMBER_FRAG', EMBER_FRAG], ['PARTICLE_FRAG', PARTICLE_FRAG]];
+    const all = [...SHADERS, ['EMBER_VERT', EMBER_VERT], ['EMBER_FRAG', EMBER_FRAG], ['SPARK_VERT', SPARK_VERT], ['PARTICLE_FRAG', PARTICLE_FRAG]];
     for (const [, frag] of all) {
       for (const m of frag.matchAll(call)) expect(Number(m[1])).toBeLessThan(Number(m[2]));
     }
