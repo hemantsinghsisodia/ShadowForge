@@ -1,8 +1,12 @@
-import { downgrade, type AppliedQuality, type QualityMode } from '../settings/Settings';
+import { nextTier, type AppliedQuality, type QualityMode } from '../settings/Settings';
 
-/** Steps AUTO quality down when the frame rate stays low. */
+const ORDER: AppliedQuality[] = ['low', 'medium', 'high'];
+
+/** Steps AUTO quality down when the frame rate stays low, and back up after a sustained smooth run. */
 export class QualityMonitor {
   private samples: number[] = [];
+  private windows: number[] = [];
+  private dropped = false;
   private cool = 0;
   fps = 60;
 
@@ -15,10 +19,13 @@ export class QualityMonitor {
     if (this.samples.length < 90) return null;
     const avg = this.samples.reduce((sum, value) => sum + value, 0) / this.samples.length;
     this.samples = [];
-    if (avg >= 42) return null;
-    const next = downgrade(tier);
+    this.windows.push(avg);
+    if (this.windows.length > 3) this.windows.shift();
+    const next = nextTier(this.windows, tier, mode, this.dropped);
     if (!next) return null;
     this.cool = 8;
+    this.windows = [];
+    if (ORDER.indexOf(next) < ORDER.indexOf(tier)) this.dropped = true;
     return next;
   }
 }

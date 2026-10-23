@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialAppliedQuality, profileFor } from '../src/settings/Settings';
+import { initialAppliedQuality, nextTier, profileFor } from '../src/settings/Settings';
 
 describe('quality profiles', () => {
   it('gives a phone on HIGH every effect, including bloom', () => {
@@ -17,9 +17,18 @@ describe('quality profiles', () => {
     expect(profile.sky).toBe('high');
   });
 
-  it('starts AUTO on HIGH for phones and desktops', () => {
-    expect(initialAppliedQuality('auto', true)).toBe('high');
+  it('starts AUTO on MEDIUM for phones and HIGH for desktops', () => {
+    expect(initialAppliedQuality('auto', true)).toBe('medium');
     expect(initialAppliedQuality('auto', false)).toBe('high');
+  });
+
+  it('tunes bloom per tier', () => {
+    const m = profileFor('medium', false), h = profileFor('high', false);
+    expect([m.bloomStrength, m.bloomRadius, m.bloomThreshold]).toEqual([0.45, 0.35, 0.9]);
+    expect([h.bloomStrength, h.bloomRadius, h.bloomThreshold]).toEqual([0.65, 0.45, 0.85]);
+    expect(h.chromatic).toBe(0.0012);
+    expect(m.chromatic).toBe(0);
+    expect(profileFor('low', true).exposure).toBe(1.05);
   });
 
   it('keeps LOW free of the expensive effects', () => {
@@ -38,5 +47,22 @@ describe('quality profiles', () => {
     expect(profileFor('medium', false).bloomScale).toBe(1);
     expect(profileFor('medium', true).bloom).toBe(true);
     expect(profileFor('medium', false).sky).toBe('medium');
+  });
+});
+
+describe('nextTier', () => {
+  it('drops a tier when the newest window is under 42 fps', () =>
+    expect(nextTier([40], 'high', 'auto', false)).toBe('medium'));
+  it('steps up after three windows at 57+ fps', () =>
+    expect(nextTier([58, 60, 59], 'medium', 'auto', false)).toBe('high'));
+  it('needs three good windows in a row', () =>
+    expect(nextTier([58, 50, 59], 'medium', 'auto', false)).toBeNull());
+  it('never steps up after a drop this session', () =>
+    expect(nextTier([60, 60, 60], 'medium', 'auto', true)).toBeNull());
+  it('does nothing in manual mode', () =>
+    expect(nextTier([10], 'high', 'high', false)).toBeNull());
+  it('stays put at the ends', () => {
+    expect(nextTier([10], 'low', 'auto', false)).toBeNull();
+    expect(nextTier([60, 60, 60], 'high', 'auto', false)).toBeNull();
   });
 });

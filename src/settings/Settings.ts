@@ -47,9 +47,9 @@ function clampNum(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, n));
 }
 
-export function initialAppliedQuality(mode: QualityMode, _coarse: boolean): AppliedQuality {
+export function initialAppliedQuality(mode: QualityMode, coarse: boolean): AppliedQuality {
   if (mode === 'low' || mode === 'medium' || mode === 'high') return mode;
-  return 'high';
+  return coarse ? 'medium' : 'high';
 }
 
 export function downgrade(tier: AppliedQuality): AppliedQuality | null {
@@ -58,15 +58,36 @@ export function downgrade(tier: AppliedQuality): AppliedQuality | null {
   return null;
 }
 
+export function upgrade(tier: AppliedQuality): AppliedQuality | null {
+  if (tier === 'low') return 'medium';
+  if (tier === 'medium') return 'high';
+  return null;
+}
+
+/**
+ * Decides an AUTO quality change from the 90-frame fps averages, newest last.
+ * Drops when the newest window is poor; steps up only after three good windows
+ * in a row and never once a drop has happened this session.
+ */
+export function nextTier(
+  windows: number[],
+  tier: AppliedQuality,
+  mode: QualityMode,
+  dropped: boolean,
+): AppliedQuality | null {
+  if (mode !== 'auto' || windows.length === 0) return null;
+  if (windows[windows.length - 1] < 42) return downgrade(tier);
+  if (!dropped && windows.length >= 3 && windows.slice(-3).every((fps) => fps >= 57)) return upgrade(tier);
+  return null;
+}
+
 export interface QualityProfile {
   dprCap: number;
-  antialias: boolean;
   shadowMapSize: number;
   particles: number;
   bloom: boolean;
   /** 1 is full resolution. Phones on MEDIUM use a half-resolution bloom buffer. */
   bloomScale: number;
-  lightCap: number;
   envMap: boolean;
   beams: boolean;
   dust: number;
@@ -77,18 +98,22 @@ export interface QualityProfile {
   msaa: number;
   /** Space backdrop detail. High is the same on phones and desktops. */
   sky: 'low' | 'medium' | 'high';
+  bloomStrength: number;
+  bloomRadius: number;
+  bloomThreshold: number;
+  exposure: number;
+  /** Chromatic aberration offset in UV units. 0 disables it. */
+  chromatic: number;
 }
 
 export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfile {
   if (tier === 'low') {
     return {
       dprCap: coarse ? 1 : 1.25,
-      antialias: false,
       shadowMapSize: 0,
       particles: 40,
       bloom: false,
       bloomScale: 1,
-      lightCap: 4,
       envMap: false,
       beams: false,
       dust: 0,
@@ -97,17 +122,20 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       dressingDetail: 'low',
       msaa: 0,
       sky: 'low',
+      bloomStrength: 0,
+      bloomRadius: 0,
+      bloomThreshold: 1,
+      exposure: 1.05,
+      chromatic: 0,
     };
   }
   if (tier === 'medium') {
     return {
       dprCap: coarse ? 1.5 : 1.75,
-      antialias: !coarse,
       shadowMapSize: 1024,
       particles: 110,
       bloom: true,
       bloomScale: coarse ? 0.5 : 1,
-      lightCap: 6,
       envMap: true,
       beams: true,
       dust: 40,
@@ -116,16 +144,19 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       dressingDetail: 'high',
       msaa: coarse ? 2 : 4,
       sky: 'medium',
+      bloomStrength: 0.45,
+      bloomRadius: 0.35,
+      bloomThreshold: 0.9,
+      exposure: 1.0,
+      chromatic: 0,
     };
   }
   return {
     dprCap: coarse ? 1.5 : 2,
-    antialias: true,
     shadowMapSize: 2048,
     particles: 220,
     bloom: true,
     bloomScale: 1,
-    lightCap: 8,
     envMap: true,
     beams: true,
     dust: 80,
@@ -134,5 +165,10 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     dressingDetail: 'high',
     msaa: 4,
     sky: 'high',
+    bloomStrength: 0.65,
+    bloomRadius: 0.45,
+    bloomThreshold: 0.85,
+    exposure: 1.0,
+    chromatic: 0.0012,
   };
 }
