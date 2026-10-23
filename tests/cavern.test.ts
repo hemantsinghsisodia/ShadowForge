@@ -2,9 +2,9 @@ import { BoxGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, Points, ShaderM
 import { describe, expect, it, vi } from 'vitest';
 import { LEVELS } from '../src/levels';
 import type { PlatformConfig } from '../src/levels/LevelData';
-import { levelBounds, placeStructures, type Placement } from '../src/world/CavernLayout';
+import { corridor, levelBounds, placeStructures, type Placement } from '../src/world/CavernLayout';
 import type { KitPart } from '../src/world/EnvKit';
-import { ABYSS_Y, ForgeCavern, MENU_BOUNDS, bakeByMaterial } from '../src/world/ForgeCavern';
+import { ABYSS_Y, ForgeCavern, MENU_BOUNDS, bakeByMaterial, rockCard } from '../src/world/ForgeCavern';
 import { FORGE_KIT, type ForgeKit } from '../src/world/ForgeKit';
 import { CAVERN } from '../src/world/ForgePalette';
 
@@ -67,14 +67,13 @@ describe('ForgeCavern', () => {
     expect((cavern.dome.children[0] as Mesh).geometry).toBe(geometry);
   });
 
-  it('keeps rock banding off the low tier', () => {
+  it('has no rock banding define on any dome tier', () => {
     const cavern = new ForgeCavern();
-    cavern.setDetail('low', 0);
-    const low = ((cavern.dome.children[0] as Mesh).material as ShaderMaterial).defines ?? {};
-    expect(low.ROCK).toBeUndefined();
-    cavern.setDetail('medium', 200);
-    const medium = ((cavern.dome.children[0] as Mesh).material as ShaderMaterial).defines ?? {};
-    expect(medium.ROCK).toBe(1);
+    for (const detail of ['low', 'medium', 'high'] as const) {
+      cavern.setDetail(detail, 0);
+      const defines = ((cavern.dome.children[0] as Mesh).material as ShaderMaterial).defines ?? {};
+      expect(defines.ROCK).toBeUndefined();
+    }
   });
 
   it('centres the abyss on the bounds, at the abyss depth', () => {
@@ -359,5 +358,145 @@ describe('ForgeCavern structures', () => {
       }
     }
     console.log(rows.join('\n'));
+  });
+});
+
+describe('rockCard', () => {
+  const rock = (geometry: ReturnType<typeof rockCard>) => Array.from(geometry.getAttribute('aRock').array as ArrayLike<number>);
+
+  it('is deterministic per seed and differs between seeds', () => {
+    const a = rockCard(100, 24, 6, 5);
+    const b = rockCard(100, 24, 6, 5);
+    const c = rockCard(100, 24, 6, 6);
+    expect(Array.from(a.getAttribute('position').array)).toEqual(Array.from(b.getAttribute('position').array));
+    expect(rock(a)).toEqual(rock(b));
+    expect(rock(a)).not.toEqual(rock(c));
+  });
+
+  it('keeps aRock in [0, 1] and varies it', () => {
+    const values = rock(rockCard(200, 96, 12, 1));
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...values)).toBeLessThanOrEqual(1);
+    expect(Math.max(...values) - Math.min(...values)).toBeGreaterThan(0.2);
+  });
+
+  it('has one vertex per lattice point and spans y -20..20 over the requested length', () => {
+    const geometry = rockCard(150, 48, 8, 2);
+    expect(geometry.getAttribute('position').count).toBe(49 * 9);
+    expect(geometry.getAttribute('aRock').count).toBe(49 * 9);
+    geometry.computeBoundingBox();
+    expect(geometry.boundingBox!.min.x).toBeCloseTo(-75);
+    expect(geometry.boundingBox!.max.x).toBeCloseTo(75);
+    expect(geometry.boundingBox!.min.y).toBeCloseTo(-20);
+    expect(geometry.boundingBox!.max.y).toBeCloseTo(20);
+  });
+
+  it('displaces along +Z by aRock * 4 and carries normals', () => {
+    const geometry = rockCard(100, 24, 6, 3);
+    const position = geometry.getAttribute('position');
+    const values = rock(geometry);
+    for (let i = 0; i < position.count; i++) expect(position.getZ(i)).toBeCloseTo(values[i] * 4, 5);
+    expect(geometry.getAttribute('normal').count).toBe(position.count);
+  });
+});
+
+describe('ForgeCavern walls', () => {
+  const wallMeshes = (cavern: ForgeCavern) => cavern.group.children.filter((c) => c.name === 'walls') as Mesh[];
+  const verts = (cavern: ForgeCavern) => wallMeshes(cavern).reduce((sum, m) => sum + m.geometry.getAttribute('position').count, 0);
+  const ready = (detail: 'low' | 'medium' | 'high') => {
+    const cavern = new ForgeCavern();
+    cavern.mount(BOUNDS, SLABS, 3);
+    cavern.setDetail(detail, 0);
+    return cavern;
+  };
+
+  it('builds 2 cards on low and medium and 4 on high', () => {
+    expect(wallMeshes(ready('low'))).toHaveLength(2);
+    expect(wallMeshes(ready('medium'))).toHaveLength(2);
+    expect(wallMeshes(ready('high'))).toHaveLength(4);
+  });
+
+  it('uses 48x8 segments on low and 96x12 otherwise', () => {
+    expect(verts(ready('low'))).toBe(2 * 49 * 9);
+    expect(verts(ready('medium'))).toBe(2 * 97 * 13);
+    expect(verts(ready('high'))).toBe(4 * 97 * 13);
+    console.log(`wall verts: low ${2 * 49 * 9}, medium ${2 * 97 * 13}, high ${4 * 97 * 13}`);
+  });
+
+  it('places the cards either side of the corridor, facing it', () => {
+    const cavern = ready('medium');
+    const { midZ, halfDepth } = corridor(BOUNDS);
+    const meshes = wallMeshes(cavern);
+    const near = meshes.find((m) => m.position.z > midZ)!;
+    const far = meshes.find((m) => m.position.z < midZ)!;
+    expect(near.position.z).toBeCloseTo(midZ + halfDepth + 22);
+    expect(far.position.z).toBeCloseTo(midZ - halfDepth - 22);
+    expect(near.rotation.y).toBeCloseTo(Math.PI);
+    expect(far.rotation.y).toBeCloseTo(0);
+    for (const m of meshes) {
+      expect(m.position.x).toBeCloseTo(10);
+      expect(m.position.y).toBe(6);
+      m.geometry.computeBoundingBox();
+      expect(m.geometry.boundingBox!.max.x - m.geometry.boundingBox!.min.x).toBeCloseTo(20 + 120);
+    }
+  });
+
+  it('adds a darker outer pair on high', () => {
+    const cavern = ready('high');
+    const { midZ, halfDepth } = corridor(BOUNDS);
+    const outer = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) > halfDepth + 30);
+    const inner = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) < halfDepth + 30);
+    expect(outer).toHaveLength(2);
+    expect(inner).toHaveLength(2);
+    for (const m of outer) {
+      expect(Math.abs(m.position.z - midZ)).toBeCloseTo(halfDepth + 34);
+      expect((m.material as ShaderMaterial).uniforms.uDark.value).toBeCloseTo(0.6);
+    }
+    for (const m of inner) expect((m.material as ShaderMaterial).uniforms.uDark.value).toBe(1);
+  });
+
+  it('is unlit, shadow-free and fog-free, sharing the cavern uniforms', () => {
+    const cavern = ready('medium');
+    const abyssMaterial = abyss(cavern).material as ShaderMaterial;
+    for (const m of wallMeshes(cavern)) {
+      const material = m.material as ShaderMaterial;
+      expect(m.castShadow).toBe(false);
+      expect(m.receiveShadow).toBe(false);
+      expect(material.fog).toBe(false);
+      expect(material.uniforms.uPulse).toBe(abyssMaterial.uniforms.uPulse);
+      expect(material.uniforms.uGlow).toBe(abyssMaterial.uniforms.uGlow);
+    }
+  });
+
+  it('does not rebuild on an equal key, and rebuilds and disposes on a change', () => {
+    const cavern = ready('high');
+    const before = wallMeshes(cavern);
+    cavern.setDetail('high', 0);
+    cavern.mount({ ...BOUNDS }, SLABS.map((s) => ({ ...s })), 3);
+    wallMeshes(cavern).forEach((m, i) => expect(m).toBe(before[i]));
+    const spies = before.map((m) => vi.spyOn(m.geometry, 'dispose'));
+    const materialSpies = before.map((m) => vi.spyOn(m.material as ShaderMaterial, 'dispose'));
+    cavern.mount(BOUNDS, SLABS, 4);
+    spies.forEach((spy) => expect(spy).toHaveBeenCalled());
+    materialSpies.forEach((spy) => expect(spy).toHaveBeenCalled());
+    before.forEach((m) => expect(m.parent).toBeNull());
+    expect(wallMeshes(cavern)).toHaveLength(4);
+    cavern.setDetail('low', 0);
+    expect(wallMeshes(cavern)).toHaveLength(2);
+  });
+
+  it('hides the walls with tune({ walls: false }) and keeps that across rebuilds', () => {
+    const cavern = ready('medium');
+    try {
+      cavern.tune({ walls: false });
+      expect(wallMeshes(cavern).every((m) => !m.visible)).toBe(true);
+      cavern.setDetail('high', 0);
+      expect(wallMeshes(cavern).length).toBeGreaterThan(0);
+      expect(wallMeshes(cavern).every((m) => !m.visible)).toBe(true);
+      cavern.tune({ walls: true });
+      expect(wallMeshes(cavern).every((m) => m.visible)).toBe(true);
+    } finally {
+      CAVERN.walls = true;
+    }
   });
 });

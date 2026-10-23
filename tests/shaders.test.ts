@@ -4,7 +4,7 @@ import { OBSIDIAN_FRAG } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
 import { EMBER_FRAG, EMBER_VERT } from '../src/effects/Embers';
 import { PARTICLE_FRAG } from '../src/effects/ParticleManager';
-import { DOME_FRAG, MOLTEN_FRAG } from '../src/world/CavernShaders';
+import { DOME_FRAG, MOLTEN_FRAG, ROCK_FRAG } from '../src/world/CavernShaders';
 
 const SHADERS: Array<[string, string]> = [
   ['FORGE_FRAG', FORGE_FRAG],
@@ -12,6 +12,7 @@ const SHADERS: Array<[string, string]> = [
   ['BEAM_FRAG', BEAM_FRAG],
   ['DOME_FRAG', DOME_FRAG],
   ['MOLTEN_FRAG', MOLTEN_FRAG],
+  ['ROCK_FRAG', ROCK_FRAG],
 ];
 
 describe.each(SHADERS)('%s', (_name, frag) => {
@@ -52,6 +53,19 @@ describe('molten abyss shader', () => {
     expect(MOLTEN_FRAG).toContain('uFlow * uAbyssTime');
     expect(MOLTEN_FRAG).not.toMatch(/uTime/);
     expect(DOME_FRAG).not.toMatch(/uTime/);
+  });
+});
+
+describe('rock wall shader', () => {
+  it('drops the dome rock banding', () => {
+    expect(DOME_FRAG).not.toContain('ROCK');
+  });
+
+  it('is unlit, glows near the abyss and fades to haze with the abyss distance fade', () => {
+    expect(ROCK_FRAG).toContain('exp(-(vWorld.y + 9.0) * 0.16)');
+    expect(ROCK_FRAG).toContain('smoothstep(2.0, 18.0, vWorld.y)');
+    expect(ROCK_FRAG).toContain('smoothstep(25.0, 70.0, distance(cameraPosition, vWorld))');
+    expect(ROCK_FRAG).not.toMatch(/uTime/);
   });
 });
 

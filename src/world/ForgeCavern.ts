@@ -1,5 +1,6 @@
 import {
   BackSide,
+  BufferAttribute,
   Color,
   Group,
   Matrix4,
@@ -13,10 +14,11 @@ import {
   type Material,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mulberry32 } from '../core/random';
 import { Embers, seedEmbers } from '../effects/Embers';
-import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT } from './CavernShaders';
+import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT, ROCK_FRAG, ROCK_VERT } from './CavernShaders';
 import type { PlatformConfig } from '../levels/LevelData';
-import { placeStructures, type Placement } from './CavernLayout';
+import { corridor, placeStructures, type Placement } from './CavernLayout';
 import type { ForgeKit } from './ForgeKit';
 import { ABYSS_Y, CAVERN, FORGE, moltenPulse } from './ForgePalette';
 
@@ -39,6 +41,55 @@ const BOOLEAN_KEYS = ['embers', 'structures', 'walls'] as const;
 const ABYSS_PERIOD = 6000;
 
 const UP = new Vector3(0, 1, 0);
+
+const WALL_HEIGHT = 40;
+const WALL_CENTRE_Y = 6;
+const WALL_DISPLACE = 4;
+/** Offset of the near wall pair from the corridor edge; High adds a darker pair behind it. */
+const WALL_NEAR = 22;
+const WALL_FAR = 34;
+const WALL_FAR_DARK = 0.6;
+
+/** Deterministic lattice value in [0, 1) for an integer cell, hashed through mulberry32. */
+function lattice(ix: number, iy: number, seed: number): number {
+  return mulberry32((Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(seed, 1442695041)) | 0)();
+}
+
+/** Smooth bilinear value noise in [0, 1). */
+function vnoise2(x: number, y: number, seed: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const top = lattice(ix, iy, seed) * (1 - ux) + lattice(ix + 1, iy, seed) * ux;
+  const bottom = lattice(ix, iy + 1, seed) * (1 - ux) + lattice(ix + 1, iy + 1, seed) * ux;
+  return top * (1 - uy) + bottom * uy;
+}
+
+/** Two octaves of value noise, normalised to [0, 1). */
+function fbm2(x: number, y: number, seed: number): number {
+  return (vnoise2(x, y, seed) + 0.5 * vnoise2(x * 2.03, y * 2.03, seed + 1)) / 1.5;
+}
+
+/**
+ * A far rock wall: a plane facing +Z (local XY, 40 tall, centred), displaced along +Z by fbm * 4 on the CPU. The
+ * normalised fbm is kept as the aRock attribute so the shader can vary the rock tone. Deterministic per seed.
+ */
+export function rockCard(length: number, segX: number, segY: number, seed: number): BufferGeometry {
+  const geometry = new PlaneGeometry(length, WALL_HEIGHT, segX, segY);
+  const position = geometry.getAttribute('position');
+  const rock = new Float32Array(position.count);
+  for (let i = 0; i < position.count; i++) {
+    const n = fbm2(position.getX(i) * 0.08, position.getY(i) * 0.12, seed);
+    rock[i] = n;
+    position.setZ(i, n * WALL_DISPLACE);
+  }
+  geometry.setAttribute('aRock', new BufferAttribute(rock, 1));
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 /**
  * Bakes placements into one merged Mesh per distinct kit material (so one draw call each). Kit geometry is
@@ -107,6 +158,8 @@ export class ForgeCavern {
   private kit: ForgeKit | null = null;
   private structures: Mesh[] = [];
   private structureKey: string | null = null;
+  private walls: Mesh[] = [];
+  private wallKey: string | null = null;
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
     uAbyssTime: { value: 0 },
@@ -126,7 +179,7 @@ export class ForgeCavern {
     this.dome.name = 'cavern-dome';
     this.detail = 'medium';
 
-    this.domeMesh = new Mesh(this.domeGeometry(this.detail), this.domeMaterial(this.detail));
+    this.domeMesh = new Mesh(this.domeGeometry(this.detail), this.domeMaterial());
     this.domeMesh.frustumCulled = false;
     this.domeMesh.renderOrder = -1;
     this.dome.add(this.domeMesh);
@@ -147,11 +200,12 @@ export class ForgeCavern {
       this.domeMesh.geometry.dispose();
       (this.domeMesh.material as ShaderMaterial).dispose();
       this.domeMesh.geometry = this.domeGeometry(detail);
-      this.domeMesh.material = this.domeMaterial(detail);
+      this.domeMesh.material = this.domeMaterial();
       (this.abyssMesh.material as ShaderMaterial).dispose();
       this.abyssMesh.material = this.abyssMaterial(detail);
     }
     this.syncStructures();
+    this.syncWalls();
   }
 
   /** Hands over the forge kit (or null) the structures are baked from. */
@@ -177,6 +231,7 @@ export class ForgeCavern {
     this.abyssMesh.position.set((minX + maxX) / 2, ABYSS_Y, (minZ + maxZ) / 2);
     this.syncEmbers();
     this.syncStructures();
+    this.syncWalls();
   }
 
   /** What the cavern was last mounted for; structures read this. */
@@ -212,6 +267,7 @@ export class ForgeCavern {
     }
     if (this.embers) this.embers.points.visible = CAVERN.embers;
     for (const mesh of this.structures) mesh.visible = CAVERN.structures;
+    for (const mesh of this.walls) mesh.visible = CAVERN.walls;
     this.uniforms.uCrackHdr.value = CAVERN.crackHdr;
     this.uniforms.uGlow.value = CAVERN.glow;
     this.uniforms.uFlow.value = CAVERN.flow;
@@ -255,14 +311,53 @@ export class ForgeCavern {
     }
   }
 
+  /** Rebuilds the rock walls only when the detail, bounds or seed have changed. */
+  private syncWalls(): void {
+    const key = [this.detail, JSON.stringify(this.bounds), this.seed].join('|');
+    if (key === this.wallKey) return;
+    this.wallKey = key;
+    for (const mesh of this.walls) {
+      this.group.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as ShaderMaterial).dispose();
+    }
+    this.walls = [];
+    const { minX, maxX } = this.bounds;
+    const { midZ, halfDepth } = corridor(this.bounds);
+    const length = maxX - minX + 120;
+    const [segX, segY] = this.detail === 'low' ? [48, 8] : [96, 12];
+    const rows: Array<[number, number]> = [[WALL_NEAR, 1]];
+    if (this.detail === 'high') rows.push([WALL_FAR, WALL_FAR_DARK]);
+    rows.forEach(([offset, dark], row) => {
+      for (const side of [1, -1]) {
+        const mesh = new Mesh(
+          rockCard(length, segX, segY, this.seed * 7 + row * 2 + (side > 0 ? 0 : 1)),
+          new ShaderMaterial({
+            uniforms: { ...this.uniforms, uDark: { value: dark } },
+            vertexShader: ROCK_VERT,
+            fragmentShader: ROCK_FRAG,
+            fog: false,
+          }),
+        );
+        mesh.name = 'walls';
+        mesh.position.set((minX + maxX) / 2, WALL_CENTRE_Y, midZ + side * (halfDepth + offset));
+        mesh.rotation.y = side > 0 ? Math.PI : 0;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.visible = CAVERN.walls;
+        this.walls.push(mesh);
+        this.group.add(mesh);
+      }
+    });
+  }
+
   private domeGeometry(detail: CavernDetail): BufferGeometry {
     return detail === 'low' ? new SphereGeometry(DOME_RADIUS, 24, 12) : new SphereGeometry(DOME_RADIUS, 32, 16);
   }
 
-  private domeMaterial(detail: CavernDetail): ShaderMaterial {
+  private domeMaterial(): ShaderMaterial {
     return new ShaderMaterial({
       uniforms: this.uniforms,
-      defines: detail === 'low' ? {} : { ROCK: 1 },
       vertexShader: DOME_VERT,
       fragmentShader: DOME_FRAG,
       side: BackSide,

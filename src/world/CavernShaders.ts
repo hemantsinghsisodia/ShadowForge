@@ -1,4 +1,4 @@
-/** Dave Hoskins' hash without sine, plus bilinear value noise. Shared by the dome and the abyss. */
+/** Dave Hoskins' hash without sine, plus bilinear value noise. Used by the abyss. */
 const NOISE = `
   float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -30,14 +30,9 @@ export const DOME_FRAG = `
   varying vec3 vDir;
   uniform vec3 uHaze;
   uniform vec3 uTop;
-  ${NOISE}
   void main() {
     vec3 dir = normalize(vDir);
     vec3 col = mix(uHaze, uTop, smoothstep(-0.25, 0.15, dir.y));
-    #ifdef ROCK
-      float band = vnoise(dir.xz / max(dir.y, 0.05)) - 0.5;
-      col += uHaze * band * 0.015 * step(0.0, dir.y);
-    #endif
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -88,6 +83,41 @@ export const MOLTEN_FRAG = `
     float crack = smoothstep(0.88, 0.97, ridge);
     float halo = smoothstep(0.55, 0.92, ridge);
     vec3 col = uCrust * (0.6 + n) + uGlowCol * halo * uGlow * uPulse + uCrackCol * crack * uCrackHdr * uPulse;
+    col = mix(col, uHaze, smoothstep(25.0, 70.0, distance(cameraPosition, vWorld)));
+    gl_FragColor = vec4(col, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+export const ROCK_VERT = `
+  attribute float aRock;
+  varying vec3 vWorld;
+  varying float vRock;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    vRock = aRock;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+/** Unlit far walls: near-black rock, lit from below by the abyss glow, fading to the dome's haze with distance. */
+export const ROCK_FRAG = `
+  precision highp float;
+  varying vec3 vWorld;
+  varying float vRock;
+  uniform vec3 uGlowCol;
+  uniform vec3 uHaze;
+  uniform vec3 uTop;
+  uniform float uGlow;
+  uniform float uPulse;
+  uniform float uDark;
+  void main() {
+    float rock = 0.03 * (0.5 + vRock);
+    vec3 col = vec3(rock) + uGlowCol * uGlow * exp(-(vWorld.y + 9.0) * 0.16) * uPulse * 0.5;
+    col *= uDark;
+    col = mix(col, uTop, smoothstep(2.0, 18.0, vWorld.y));
     col = mix(col, uHaze, smoothstep(25.0, 70.0, distance(cameraPosition, vWorld)));
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
