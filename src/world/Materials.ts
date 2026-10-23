@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   CanvasTexture,
   Color,
+  type Mesh,
   MeshStandardMaterial,
   PMREMGenerator,
   NoColorSpace,
@@ -10,7 +11,7 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { buildLabEnvScene } from './LabEnvironment';
 
 export const LEVEL_ACCENTS = [
   0x5ce1ff, 0xffb15a, 0x9b8cff, 0x3ee0c8, 0x7dffe1, 0xd7e6ff, 0xff8a5c, 0x8ee9ff, 0x9ecbff, 0xffd2a1,
@@ -230,7 +231,14 @@ export function createLabMaterials(): LabMaterials {
 
 export function buildEnvMap(renderer: WebGLRenderer): Texture {
   const pmrem = new PMREMGenerator(renderer);
-  const texture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const envScene = buildLabEnvScene();
+  const texture = pmrem.fromScene(envScene, 0.03).texture;
+  envScene.traverse((object) => {
+    const mesh = object as Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material.dispose();
+  });
   pmrem.dispose();
   return texture;
 }

@@ -35,6 +35,7 @@ import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, type EnvKit } from './EnvKit';
+import { ENV_INTENSITY, hemiIntensity } from './LabEnvironment';
 import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
 import { SpaceBackdrop } from './SpaceBackdrop';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -73,6 +74,7 @@ export class LevelWorld {
   private exit: Mesh | null = null;
   private column: Mesh | null = null;
   private sun: DirectionalLight | null = null;
+  private hemi: HemisphereLight | null = null;
   private config: LevelConfig | null = null;
   private dressing: Group | null = null;
   private pillars: Mesh[] = [];
@@ -112,6 +114,7 @@ export class LevelWorld {
   applyProfile(profile: QualityProfile): void {
     const detailChanged = this.dressingDetail !== profile.dressingDetail;
     this.profile = profile;
+    if (this.hemi) this.hemi.intensity = hemiIntensity(profile.envMap);
     this.beamsOn = profile.beams;
     this.dressingDetail = profile.dressingDetail;
     if (profile.envMap) {
@@ -119,7 +122,7 @@ export class LevelWorld {
       if (this.env) {
         lab.applyEnv(this.env);
         this.scene.environment = this.env;
-        this.scene.environmentIntensity = 0.28;
+        this.scene.environmentIntensity = ENV_INTENSITY;
       }
     } else {
       this.scene.environment = null;
@@ -141,8 +144,8 @@ export class LevelWorld {
     this.scene.background = fog;
     this.scene.fog = new FogExp2(fog, config.id >= 8 ? 0.016 : 0.028);
     this.backdrop.setTint(this.accent, fog);
-    const hemi = new HemisphereLight(0xb7c6dc, 0x243044, 2.1);
-    this.root.add(hemi);
+    this.hemi = new HemisphereLight(0xb7c6dc, 0x243044, hemiIntensity(this.profile?.envMap ?? true));
+    this.root.add(this.hemi);
     this.sun = new DirectionalLight(0xe7eef8, 4.5);
     this.sun.position.set(-12, 22, 8);
     this.applyShadowSize(shadowMapSize);
@@ -404,6 +407,7 @@ export class LevelWorld {
     this.exit = null;
     this.column = null;
     this.sun = null;
+    this.hemi = null;
     this.bounds = null;
     this.pillars = [];
     this.platformViews = [];
@@ -552,7 +556,7 @@ export class LevelWorld {
     this.env = buildEnvMap(this.gl);
     lab.applyEnv(this.env);
     this.scene.environment = this.env;
-    this.scene.environmentIntensity = 0.28;
+    this.scene.environmentIntensity = ENV_INTENSITY;
   }
 
   private mountDressing(): void {
