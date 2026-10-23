@@ -1,3 +1,5 @@
+import type { Punch } from './PostFX';
+
 /** Pure curves for the 0.9 s forge moment: charge, impact punch, then obsidian rising. */
 export const CHARGE_END = 0.45;
 export const FORGE_END = 0.9;
@@ -72,4 +74,66 @@ export function collapseProgress(t: number): number {
 
 export function collapseFlash(t: number): number {
   return pulse(t, 0.03, 0.12) * 0.3;
+}
+
+/** Warm red the full-screen flash takes on while a shadow collapses. */
+export const COLLAPSE_FLASH_COLOR = 0xff6a4a;
+
+/** Copies the punch terms of `frame` into `out` (white flash) without allocating. */
+export function fillPunch(frame: ForgeFrame, out: Punch): Punch {
+  out.flash = frame.flash;
+  out.exposure = frame.exposure;
+  out.bloom = frame.bloom;
+  out.ca = frame.ca;
+  out.flashColor = undefined;
+  return out;
+}
+
+/**
+ * Merges a live collapse flash into the forge punch: the larger flash wins and turns collapse-red,
+ * every other term is the forge's. `out` may be `base` itself. Allocation-free.
+ */
+export function mixPunch(base: Punch, collapse: number, out: Punch): Punch {
+  out.flash = Math.max(base.flash, collapse);
+  out.exposure = base.exposure;
+  out.bloom = base.bloom;
+  out.ca = base.ca;
+  out.flashColor = COLLAPSE_FLASH_COLOR;
+  return out;
+}
+
+/** The collapse clock `t` at which `collapseProgress(t)` equals `progress` (the exact inverse of the cubic ease). */
+export function collapseTimeFor(progress: number): number {
+  return COLLAPSE_TIME * (1 - Math.cbrt(clamp01(progress)));
+}
+
+/** Clock of one forge moment and its effect tail; `t` keeps running until FORGE_SETTLE, well past input unlocking at FORGE_END. */
+export interface ForgeFx {
+  active: boolean;
+  t: number;
+  prevT: number;
+  surfaceId: string;
+}
+
+/** Arms `fx` for `surfaceId`. `prevT` sits before 0 so the first step cannot be mistaken for the impact crossing. */
+export function startForgeFx(fx: ForgeFx, surfaceId: string): ForgeFx {
+  fx.active = true;
+  fx.t = 0;
+  fx.prevT = -1;
+  fx.surfaceId = surfaceId;
+  return fx;
+}
+
+/**
+ * Advances `fx` by `dt` and writes the frame into `out`. Returns true on the step that reaches FORGE_SETTLE,
+ * which also deactivates `fx`; an inactive `fx` is left untouched. Impact fires on exactly one step.
+ */
+export function stepForgeFx(fx: ForgeFx, dt: number, reducedMotion: boolean, out: ForgeFrame): boolean {
+  if (!fx.active) return false;
+  fx.prevT = fx.t;
+  fx.t += dt;
+  forgeTimeline(fx.t, fx.prevT, reducedMotion, out);
+  if (fx.t < FORGE_SETTLE) return false;
+  fx.active = false;
+  return true;
 }

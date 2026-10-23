@@ -56,6 +56,8 @@ const TUTORIAL = [
 
 export class Ui {
   private captionTimer = 0;
+  private flashValue = 0;
+  private readonly flashNode: HTMLElement;
   private readonly slider: HTMLInputElement;
 
   constructor(
@@ -175,6 +177,11 @@ export class Ui {
       ([title, body], index) =>
         `<div class="step"><div class="glyph">${index + 1}</div><div><strong>${title}</strong><div class="muted">${body}</div></div></div>`,
     ).join('');
+    // A sibling of the UI root, not a child: `screen` blending only reaches the canvas from outside the UI's stacking context.
+    this.flashNode = root.ownerDocument.createElement('div');
+    this.flashNode.className = 'flash-overlay';
+    this.flashNode.setAttribute('aria-hidden', 'true');
+    root.before(this.flashNode);
     this.slider = root.querySelector('#manip-slider') as HTMLInputElement;
     root.addEventListener('pointerdown', (event) => {
       const target = (event.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
@@ -310,6 +317,14 @@ export class Ui {
 
   setRotate(on: boolean): void {
     (this.root.querySelector('#rotate') as HTMLElement).classList.toggle('on', on);
+  }
+
+  /** Low-tier stand-in for the post-processing flash. Skips the DOM write unless the value moved by more than 0.005. */
+  setFlash(opacity: number): void {
+    const next = opacity < 0 ? 0 : opacity > 1 ? 1 : opacity;
+    if (Math.abs(next - this.flashValue) <= 0.005 && (next !== 0 || this.flashValue === 0)) return;
+    this.flashValue = next;
+    this.flashNode.style.opacity = String(next);
   }
 
   caption(text: string): void {

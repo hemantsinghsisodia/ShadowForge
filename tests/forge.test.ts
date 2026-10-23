@@ -12,8 +12,16 @@ import {
   riseProgress,
   collapseProgress,
   collapseFlash,
+  collapseTimeFor,
+  fillPunch,
+  mixPunch,
+  startForgeFx,
+  stepForgeFx,
+  COLLAPSE_FLASH_COLOR,
   type ForgeFrame,
+  type ForgeFx,
 } from '../src/effects/ForgeTimeline';
+import type { Punch } from '../src/effects/PostFX';
 import { prefersReducedMotion } from '../src/core/device';
 import { PerspectiveCamera } from 'three';
 import { BASE_FOV, CameraRig } from '../src/player/CameraRig';
@@ -249,5 +257,121 @@ describe('forgeLightPoint', () => {
 
   it('peaks at 120', () => {
     expect(FORGE_LIGHT_PEAK).toBe(120);
+  });
+});
+
+function punchOut(): Punch {
+  return { flash: 9, exposure: 9, bloom: 9, ca: 9, flashColor: 0x123456 };
+}
+
+describe('fillPunch', () => {
+  it('copies the frame values into out and returns the same object', () => {
+    const f: ForgeFrame = { ...frame(), flash: 0.5, exposure: 0.2, bloom: 0.7, ca: 0.003, shake: 1, light: 1 };
+    const out = punchOut();
+    expect(fillPunch(f, out)).toBe(out);
+    expect(out).toEqual({ flash: 0.5, exposure: 0.2, bloom: 0.7, ca: 0.003, flashColor: undefined });
+  });
+
+  it('clears a leftover flash colour so the forge flash reads white again', () => {
+    const out = punchOut();
+    fillPunch(frame(), out);
+    expect(out.flashColor).toBeUndefined();
+  });
+});
+
+describe('mixPunch', () => {
+  it('takes the larger flash, turns it collapse-red and keeps the other terms', () => {
+    const base: Punch = { flash: 0.4, exposure: 0.1, bloom: 0.3, ca: 0.002 };
+    const out = punchOut();
+    expect(mixPunch(base, 0.25, out)).toBe(out);
+    expect(out).toEqual({ flash: 0.4, exposure: 0.1, bloom: 0.3, ca: 0.002, flashColor: COLLAPSE_FLASH_COLOR });
+    mixPunch(base, 0.6, out);
+    expect(out.flash).toBe(0.6);
+    expect(out.flashColor).toBe(0xff6a4a);
+  });
+
+  it('is safe in place (out === base)', () => {
+    const p: Punch = { flash: 0.1, exposure: 0.2, bloom: 0.3, ca: 0.004 };
+    mixPunch(p, 0.3, p);
+    expect(p).toEqual({ flash: 0.3, exposure: 0.2, bloom: 0.3, ca: 0.004, flashColor: 0xff6a4a });
+  });
+});
+
+describe('collapseTimeFor', () => {
+  it('inverts collapseProgress, so a collapse starts from the current rise', () => {
+    for (const p of [1, 0.9, 0.5, 0.2, 0.01, 0]) {
+      expect(collapseProgress(collapseTimeFor(p))).toBeCloseTo(p, 10);
+    }
+  });
+
+  it('starts at t = 0 for a fully grown solid and at COLLAPSE_TIME for one not yet risen', () => {
+    expect(collapseTimeFor(1)).toBe(0);
+    expect(collapseTimeFor(0)).toBeCloseTo(COLLAPSE_TIME, 10);
+  });
+
+  it('clamps out-of-range progress', () => {
+    expect(collapseTimeFor(2)).toBe(0);
+    expect(collapseTimeFor(-1)).toBeCloseTo(COLLAPSE_TIME, 10);
+  });
+
+  it('matches a mid-rise surface: no pop on the first collapse frame', () => {
+    const risen = riseProgress(RISE_TIME * 0.4);
+    expect(collapseProgress(collapseTimeFor(risen))).toBeCloseTo(risen, 10);
+  });
+});
+
+describe('ForgeFx stepper', () => {
+  function fx(): ForgeFx {
+    return { active: false, t: 0, prevT: 0, surfaceId: '' };
+  }
+
+  it('starts active at t = 0 for the surface, ahead of the first step', () => {
+    const f = fx();
+    startForgeFx(f, 'floor-1');
+    expect(f).toEqual({ active: true, t: 0, prevT: -1, surfaceId: 'floor-1' });
+  });
+
+  it('runs the impact exactly once, keeps going past FORGE_END, and settles at FORGE_SETTLE', () => {
+    for (const dt of [1 / 60, 1 / 30, 0.05, 0.0123]) {
+      const f = fx();
+      const out = frame();
+      startForgeFx(f, 'a');
+      let impacts = 0;
+      let steps = 0;
+      let sawTail = false;
+      let settled = false;
+      while (f.active && steps++ < 1000) {
+        settled = stepForgeFx(f, dt, false, out);
+        if (out.impact) impacts++;
+        if (f.t > FORGE_END && f.active) {
+          sawTail = true;
+          expect(out.flash + out.bloom).toBeGreaterThan(0);
+        }
+      }
+      expect(impacts).toBe(1);
+      expect(sawTail).toBe(true);
+      expect(settled).toBe(true);
+      expect(f.active).toBe(false);
+      expect(f.t).toBeGreaterThanOrEqual(FORGE_SETTLE);
+      expect(f.t).toBeLessThan(FORGE_SETTLE + dt + 1e-9);
+    }
+  });
+
+  it('does nothing once inactive', () => {
+    const f = fx();
+    const out = frame();
+    out.flash = 0.7;
+    expect(stepForgeFx(f, 0.016, false, out)).toBe(false);
+    expect(f.t).toBe(0);
+    expect(out.flash).toBe(0.7);
+  });
+
+  it('passes the reduced-motion flag through to the timeline', () => {
+    const f = fx();
+    const out = frame();
+    startForgeFx(f, 'a');
+    stepForgeFx(f, CHARGE_END + 0.04, true, out);
+    expect(out.shake).toBe(0);
+    expect(out.fovKick).toBe(0);
   });
 });

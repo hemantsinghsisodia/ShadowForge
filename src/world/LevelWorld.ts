@@ -28,6 +28,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
+import { collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
 import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
@@ -253,6 +254,11 @@ export class LevelWorld {
       if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
     }
     setKitScale(kitMaterials, LIGHTING.kitScale);
+  }
+
+  /** The level's accent colour as sRGB hex, for sparks that should match the forge. */
+  accentHex(): number {
+    return this.accent.getHex();
   }
 
   pulseForge(id: string): void {
@@ -496,8 +502,9 @@ export class LevelWorld {
         // Collapsing views live on until they finish; anything else goes now, or starts collapsing if marked.
         if (view && view.mode !== 'collapse') {
           if (this.collapsePending.has(id)) {
+            // A surface still rising recedes from where it stands instead of popping to full height first.
+            view.t = collapseTimeFor(view.mode === 'rise' ? riseProgress(view.t) : 1);
             view.mode = 'collapse';
-            view.t = 0;
             view.material.uniforms.hot.value = 1;
           } else this.removeSolid(id, view);
         }

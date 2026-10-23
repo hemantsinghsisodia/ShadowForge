@@ -1,12 +1,23 @@
 import { Color, FogExp2, Raycaster, Scene, Vector2 } from 'three';
 import { AudioManager } from '../audio/AudioManager';
 import { Haptics } from '../audio/Haptics';
-import { phonePortrait, isCoarsePointer } from '../core/device';
+import { phonePortrait, isCoarsePointer, prefersReducedMotion } from '../core/device';
 import { requestGameFullscreen } from '../core/fullscreen';
 import { GameState } from '../core/GameState';
 import { QualityMonitor } from '../core/QualityMonitor';
 import { Renderer } from '../core/Renderer';
+import {
+  FORGE_END,
+  collapseFlash,
+  fillPunch,
+  mixPunch,
+  startForgeFx,
+  stepForgeFx,
+  type ForgeFrame,
+  type ForgeFx,
+} from '../effects/ForgeTimeline';
 import { ParticleManager } from '../effects/ParticleManager';
+import { ZERO_PUNCH, type Punch } from '../effects/PostFX';
 import { ManipulationMode } from '../interaction/ManipulationMode';
 import { InputManager } from '../input/InputManager';
 import { getLevel, LEVELS } from '../levels';
@@ -17,6 +28,8 @@ import { CameraRig } from '../player/CameraRig';
 import { PlayerView } from '../player/PlayerView';
 import { SaveManager } from '../save/SaveManager';
 import { initialAppliedQuality, profileFor, type AppliedQuality, type QualityMode, type Settings } from '../settings/Settings';
+import { forgeLightPoint } from '../shadows/ForgeSurface';
+import { edgePoints } from '../shadows/math';
 import { ShadowManager } from '../shadows/ShadowManager';
 import { Ui, formatTime, type HudState } from '../ui/Ui';
 import { FORGE, MENU_FOG_DENSITY, cavernFog } from '../world/ForgePalette';
@@ -25,6 +38,11 @@ import { LevelWorld } from '../world/LevelWorld';
 
 const raycaster = new Raycaster();
 const ndc = new Vector2();
+
+/** The collapse flash is a 0.3 s pulse; the timer runs a little past it. */
+const COLLAPSE_FLASH_END = 0.4;
+/** Edge sparks per forge: at most this many points, and never more than a third of the particle budget. */
+const EDGE_SPARK_CAP = 120;
 
 export class Game {
   private readonly save = new SaveManager();
@@ -49,8 +67,28 @@ export class Game {
   private body = new CharacterBody();
   private elapsed = 0;
   private attemptResets = 0;
-  private transition = 0;
-  private pendingSurface = '';
+  /** The forge moment: runs through the charge, the impact and the effect tail, in SHADOW_TRANSITION and then PLAYING. */
+  private readonly forgeFx: ForgeFx = { active: false, t: 0, prevT: 0, surfaceId: '' };
+  private readonly forgeFrame: ForgeFrame = {
+    charge: 0,
+    flash: 0,
+    exposure: 0,
+    bloom: 0,
+    ca: 0,
+    fovKick: 0,
+    shake: 0,
+    light: 0,
+    impact: false,
+  };
+  private readonly zeroFrame: ForgeFrame = { ...this.forgeFrame };
+  /** Handed to `renderer.punch`, which keeps the reference: mutated in place, never replaced. */
+  private readonly punchOut: Punch = { flash: 0, exposure: 0, bloom: 0, ca: 0 };
+  private punchLive = false;
+  private collapseT = COLLAPSE_FLASH_END;
+  private reducedMotion = prefersReducedMotion();
+  private readonly edgeScratch = new Float32Array(EDGE_SPARK_CAP * 3);
+  private readonly sparkDir: [number, number, number] = [0, 1, 0];
+  private readonly normalPoint = { x: 0, y: 0, z: 0 };
   private screenReturn: 'menu' | 'pause' = 'menu';
   private last = 0;
   private wasGrounded = true;
@@ -92,6 +130,14 @@ export class Game {
       fullscreen: () => requestGameFullscreen(),
     });
     this.audio.onCaption = (text) => this.ui.caption(text);
+    if (typeof window.matchMedia === 'function') {
+      const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (typeof query.addEventListener === 'function') {
+        query.addEventListener('change', () => {
+          this.reducedMotion = prefersReducedMotion();
+        });
+      }
+    }
     this.applySettings();
     this.player.group.visible = false;
     this.scene.background = new Color(FORGE.top);
@@ -186,6 +232,8 @@ export class Game {
     if (mode === 'LEVEL_INTRO' && this.config) this.viewLevel(dt, frame.lookX, frame.lookY);
     if (mode === 'PLAYING') this.play(dt, frame);
     if (mode === 'SHADOW_TRANSITION') this.playTransition(dt);
+    // The effects only advance in PLAYING and SHADOW_TRANSITION; never leave them frozen on another screen.
+    if (mode !== 'PLAYING' && mode !== 'SHADOW_TRANSITION' && this.fxLive()) this.resetForgeEffects();
     if (mode === 'PAUSED' || mode === 'LEVEL_COMPLETE' || mode === 'GAME_COMPLETE') {
       this.world.update(0);
     }
@@ -208,12 +256,15 @@ export class Game {
       return;
     }
     this.elapsed += dt;
+    this.stepEffects(dt);
     if (this.manip.active) this.playManip(dt, frame);
     else this.playMove(dt, frame);
     const collapsed = this.shadows.update(dt);
     for (const id of collapsed) {
       this.audio.play('collapse');
       this.haptics.pulse(28);
+      this.world.beginCollapse(id);
+      this.collapseT = 0;
       const def = this.shadows.defs.get(id);
       if (def) this.particles.burst(def.origin.x, def.origin.y + 0.2, def.origin.z, 28, 0xff6a4a, 'shard');
     }
@@ -273,21 +324,117 @@ export class Game {
 
   private playTransition(dt: number): void {
     if (!this.shadows || !this.config) return;
-    this.transition += dt;
     this.world.update(dt);
     this.particles.update(dt);
-    this.camera.shake = 0.6;
+    this.stepEffects(dt);
     const boxes = this.shadows.collisionBoxes();
     this.body.step(dt, 0, 0, false, boxes);
     this.player.update(dt, this.body);
     this.camera.update(dt, this.body, boxes);
     this.world.fadeOccluders(this.camera.camera.position, this.body.x, this.body.z, dt);
-    if (this.transition < 0.55) return;
-    const forged = this.shadows.forge(this.pendingSurface);
-    this.world.sync(this.shadows);
-    if (forged) this.world.pulseForge(this.pendingSurface);
-    this.state.set('PLAYING');
-    if (!forged) this.audio.play('deny');
+    // Input unlocks here; the effect tail keeps running in PLAYING until it settles.
+    if (this.state.name === 'SHADOW_TRANSITION' && this.forgeFx.t >= FORGE_END) this.state.set('PLAYING');
+  }
+
+  /**
+   * Advances the forge moment and the collapse flash, and applies them. Called once per frame by whichever of
+   * PLAYING / SHADOW_TRANSITION is current, before the camera updates so the shake lands this frame.
+   */
+  private stepEffects(dt: number): void {
+    if (!this.fxLive()) return;
+    const fx = this.forgeFx;
+    if (this.collapseT < COLLAPSE_FLASH_END) this.collapseT += dt;
+    if (fx.active) {
+      const frame = this.forgeFrame;
+      const settled = stepForgeFx(fx, dt, this.reducedMotion, frame);
+      // The impact crossing happens on exactly one step of the clock, so it runs once whichever state is current.
+      if (frame.impact && !this.forgeImpact(fx.surfaceId)) return;
+      if (settled) {
+        this.clearForgeVisuals();
+      } else {
+        this.camera.kick(frame.fovKick);
+        this.camera.shake = frame.shake;
+        this.world.setForgeCharge(fx.surfaceId, frame.charge);
+        this.world.setForgeLight(fx.surfaceId, frame.light);
+      }
+    }
+    this.applyPunch();
+  }
+
+  /** Pushes the forge frame and any live collapse flash to the renderer, or to the Low-tier overlay. Mutates one reused Punch. */
+  private applyPunch(): void {
+    const forgeOn = this.forgeFx.active;
+    const collapseOn = this.collapseT < COLLAPSE_FLASH_END;
+    if (!forgeOn && !collapseOn) {
+      if (this.punchLive) {
+        this.punchLive = false;
+        this.renderer.punch(ZERO_PUNCH);
+        this.ui.setFlash(0);
+      }
+      return;
+    }
+    const out = this.punchOut;
+    fillPunch(forgeOn ? this.forgeFrame : this.zeroFrame, out);
+    if (collapseOn) mixPunch(out, collapseFlash(this.collapseT), out);
+    this.punchLive = true;
+    this.renderer.punch(out);
+    this.ui.setFlash(this.renderer.hasComposer() ? 0 : out.flash);
+  }
+
+  /** Freezes the forged shadow at the impact frame. Returns false, after backing out of the moment, when nothing was forged. */
+  private forgeImpact(id: string): boolean {
+    const shadows = this.shadows;
+    if (!shadows) return false;
+    if (!shadows.forge(id)) {
+      this.audio.play('deny');
+      this.resetForgeEffects();
+      this.state.set('PLAYING');
+      return false;
+    }
+    this.world.beginRise(id);
+    this.world.sync(shadows);
+    this.world.pulseForge(id);
+    this.haptics.pulse(45);
+    this.edgeSparks(shadows, id);
+    return true;
+  }
+
+  /** Sparks along the frozen shadow's edge, thrown out along the surface normal. */
+  private edgeSparks(shadows: ShadowManager, id: string): void {
+    const def = shadows.defs.get(id);
+    const frozen = shadows.solid.get(id);
+    if (!def || !frozen) return;
+    const count = Math.min(EDGE_SPARK_CAP, Math.floor(this.particles.budget / 3));
+    if (count <= 0) return;
+    // forgeLightPoint orients the normal as the forge light sees it: up for floors and ramps, toward the player for walls.
+    forgeLightPoint(def, 1, this.normalPoint);
+    const dir = this.sparkDir;
+    dir[0] = this.normalPoint.x - def.origin.x;
+    dir[1] = this.normalPoint.y - def.origin.y;
+    dir[2] = this.normalPoint.z - def.origin.z;
+    this.particles.burstPoints(edgePoints(def, frozen, count, this.edgeScratch), 2, this.world.accentHex(), 'spark', dir);
+  }
+
+  private fxLive(): boolean {
+    return this.forgeFx.active || this.collapseT < COLLAPSE_FLASH_END || this.punchLive;
+  }
+
+  /** Lets go of the camera, the plate and the forge light. Leaves the post-processing punch alone. */
+  private clearForgeVisuals(): void {
+    this.camera.kick(0);
+    this.camera.shake = 0;
+    this.world.setForgeLight(null, 0);
+    this.world.setForgeCharge(null, 0);
+  }
+
+  /** Hard stop of every forge and collapse effect. Every path that interrupts play calls this. */
+  private resetForgeEffects(): void {
+    this.forgeFx.active = false;
+    this.collapseT = COLLAPSE_FLASH_END;
+    this.punchLive = false;
+    this.renderer.punch(ZERO_PUNCH);
+    this.clearForgeVisuals();
+    this.ui.setFlash(0);
   }
 
   private tryInteract(): void {
@@ -304,13 +451,10 @@ export class Game {
         this.audio.play('deny');
         return;
       }
-      this.pendingSurface = hit.surfaceId;
-      this.transition = 0;
+      startForgeFx(this.forgeFx, hit.surfaceId);
       this.state.set('SHADOW_TRANSITION');
       this.audio.play('forge');
       this.haptics.pulse(30);
-      const def = this.shadows.defs.get(hit.surfaceId);
-      if (def) this.particles.burst(def.origin.x, def.origin.y + 0.3, def.origin.z, 36, 0x5ce1ff, 'spark');
       return;
     }
     if (hit.interaction === 'toggle') {
@@ -482,6 +626,7 @@ export class Game {
     if (dist > exit.radius || !this.body.grounded || Math.abs(this.body.y - exit.position[1]) > 1.6) return;
     const index = this.config.id - 1;
     this.save.markComplete(this.config.id, this.elapsed, this.save.data.resets[index] ?? this.attemptResets);
+    this.resetForgeEffects();
     this.audio.play('complete');
     this.haptics.pulse(24);
     this.input.setMode('play');
@@ -498,6 +643,7 @@ export class Game {
 
   private respawn(): void {
     if (!this.config) return;
+    this.resetForgeEffects();
     const start = this.config.playerStart.position;
     this.body.x = start[0];
     this.body.y = start[1] + 0.2;
@@ -514,6 +660,7 @@ export class Game {
     const level = LEVELS.find((entry) => entry.id === id);
     if (!level) return;
     if (!force && !this.debug && id > this.save.data.unlocked) return;
+    this.resetForgeEffects();
     this.config = getLevel(id);
     this.shadows = new ShadowManager(this.config);
     const profile = profileFor(this.tier, isCoarsePointer());
@@ -542,6 +689,7 @@ export class Game {
   private pause(): void {
     if (this.state.name !== 'PLAYING' && this.state.name !== 'SHADOW_TRANSITION') return;
     if (this.manip.active) this.cancelManip();
+    this.resetForgeEffects();
     this.releasePointer();
     this.state.set('PAUSED');
     this.ui.show('pause');
@@ -555,6 +703,7 @@ export class Game {
 
   private restart(): void {
     if (!this.config) return;
+    this.resetForgeEffects();
     this.attemptResets += 1;
     this.save.addReset(this.config.id);
     this.shadows = new ShadowManager(this.config);
@@ -617,6 +766,7 @@ export class Game {
 
   private enterMenu(): void {
     if (this.manip.active) this.cancelManip();
+    this.resetForgeEffects();
     this.releasePointer();
     this.world.showMenu(true);
     this.player.group.visible = false;

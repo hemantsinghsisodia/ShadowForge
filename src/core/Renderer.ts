@@ -57,6 +57,11 @@ export class Renderer {
     this.resize();
   }
 
+  /** True when the post-processing composer is active, i.e. the grade pass can draw the full-screen flash. */
+  hasComposer(): boolean {
+    return this.composer !== null;
+  }
+
   /** Pixel ratio the scene is actually rendered at: the composer runs at reduced scale when bloom uses it. */
   effectivePixelRatio(): number {
     const dpr = this.renderer.getPixelRatio();
