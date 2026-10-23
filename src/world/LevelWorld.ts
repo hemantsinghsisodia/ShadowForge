@@ -172,6 +172,7 @@ export class LevelWorld {
       this.mountDressing();
       this.mountRims();
     }
+    lab.applyDetail(profile.cavern);
     this.cavern.setDetail(profile.cavern, profile.embers);
     this.syncForgeLight();
     this.syncLampShadow();
