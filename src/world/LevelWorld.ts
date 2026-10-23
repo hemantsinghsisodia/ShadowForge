@@ -43,7 +43,7 @@ import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { levelBounds, sunShadowFrame } from './CavernLayout';
-import { LAMP_SHADOW, pickShadowLamp } from './LampShadow';
+import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp } from './LampShadow';
 import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -429,6 +429,11 @@ export class LevelWorld {
       view.pole.position.y = -view.pole.scale.y / 2;
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
+      if (cfg.id === this.shadowLampId) {
+        // A lamp that is off skips its shadow pass (toggling castShadow would recompile materials); one refresh when it comes back.
+        if (volume.enabled && !view.light.shadow.autoUpdate) view.light.shadow.needsUpdate = true;
+        view.light.shadow.autoUpdate = volume.enabled;
+      }
       const headMat = view.head.material as MeshBasicMaterial;
       headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 4.0 : 0.12);
       const dir =
@@ -597,6 +602,9 @@ export class LevelWorld {
     }
     this.forges.length = 0;
     this.consoles.length = 0;
+    // three never frees a light's shadow map when the light is removed, so free the shadow lamp's and the sun's here.
+    const shadowView = this.shadowLampId === null ? undefined : this.lamps.get(this.shadowLampId);
+    disposeLightShadows([shadowView?.light, this.sun]);
     this.lamps.clear();
     this.shadowLampId = null;
     this.casterGroups.clear();
@@ -686,8 +694,8 @@ export class LevelWorld {
       light.shadow.bias = LAMP_SHADOW.bias;
       light.shadow.normalBias = LAMP_SHADOW.normalBias;
       light.shadow.radius = LAMP_SHADOW.radius;
+      // The shadow camera's far plane is not set here: three rewrites it from light.distance every frame.
       light.shadow.camera.near = 0.1;
-      light.shadow.camera.far = cfg.type === 'spotlight' ? cfg.range : Math.max(cfg.range, 10);
     }
     const glow = createBeam(new Color(cfg.color));
     group.add(pole, head, light, glow.cone, glow.halo);

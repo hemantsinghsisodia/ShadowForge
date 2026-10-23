@@ -1,9 +1,9 @@
 import { InstancedMesh, MeshStandardMaterial, PlaneGeometry } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { KIT, type EnvKit } from '../src/world/EnvKit';
 import { buildKitFloor } from '../src/world/LabDressing';
 import { LEVELS, getLevel } from '../src/levels';
-import { LAMP_SHADOW, pickShadowLamp } from '../src/world/LampShadow';
+import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp } from '../src/world/LampShadow';
 
 describe('pickShadowLamp', () => {
   it('picks the spotlight on level 6', () => {
@@ -64,5 +64,15 @@ describe('kit floor shadows', () => {
       expect(mesh.castShadow).toBe(false);
       expect(mesh.receiveShadow).toBe(true);
     }
+  });
+});
+
+describe('disposeLightShadows', () => {
+  it('disposes each light shadow and skips missing ones', () => {
+    const a = { shadow: { dispose: vi.fn() } };
+    const b = { shadow: { dispose: vi.fn() } };
+    disposeLightShadows([a, undefined, null, b, {}]);
+    expect(a.shadow.dispose).toHaveBeenCalledTimes(1);
+    expect(b.shadow.dispose).toHaveBeenCalledTimes(1);
   });
 });

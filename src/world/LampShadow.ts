@@ -25,3 +25,11 @@ export function pickShadowLamp(config: LevelConfig): string | null {
   }
   return best.id;
 }
+
+/**
+ * Frees the shadow render targets of lights that are about to be dropped. three never releases `light.shadow.map`
+ * when a light leaves the scene, so a level reload would leak one per shadow-casting light.
+ */
+export function disposeLightShadows(lights: Iterable<{ shadow?: { dispose(): void } } | null | undefined>): void {
+  for (const light of lights) light?.shadow?.dispose();
+}
