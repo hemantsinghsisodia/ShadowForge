@@ -146,7 +146,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       sky: 'medium',
       bloomStrength: 0.45,
       bloomRadius: 0.35,
-      bloomThreshold: 2.8,
+      bloomThreshold: 1.8,
       exposure: 1.0,
       chromatic: 0,
     };
@@ -167,7 +167,7 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     sky: 'high',
     bloomStrength: 0.6,
     bloomRadius: 0.45,
-    bloomThreshold: 2.5,
+    bloomThreshold: 1.8,
     exposure: 1.0,
     chromatic: 0.0012,
   };
