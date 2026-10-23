@@ -228,7 +228,12 @@ export class LevelWorld {
     this.root.add(this.underLight, this.underLight.target);
     this.mountDressing();
     const token = ++this.loadToken;
-    void loadForgeKit();
+    const forge = forgeKit();
+    if (forge) this.cavern.setKit(forge);
+    else
+      void loadForgeKit().then((loaded) => {
+        if (loaded) this.cavern.setKit(loaded);
+      });
     const kit = envKit();
     if (kit) this.applyKit(kit);
     else

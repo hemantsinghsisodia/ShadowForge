@@ -1,7 +1,23 @@
-import { BackSide, Color, Group, Mesh, PlaneGeometry, ShaderMaterial, SphereGeometry, type BufferGeometry, type Vector3 } from 'three';
+import {
+  BackSide,
+  Color,
+  Group,
+  Matrix4,
+  Mesh,
+  PlaneGeometry,
+  Quaternion,
+  ShaderMaterial,
+  SphereGeometry,
+  Vector3,
+  type BufferGeometry,
+  type Material,
+} from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Embers, seedEmbers } from '../effects/Embers';
 import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT } from './CavernShaders';
 import type { PlatformConfig } from '../levels/LevelData';
+import { placeStructures, type Placement } from './CavernLayout';
+import type { ForgeKit } from './ForgeKit';
 import { ABYSS_Y, CAVERN, FORGE, moltenPulse } from './ForgePalette';
 
 export type CavernDetail = 'low' | 'medium' | 'high';
@@ -22,6 +38,54 @@ const BOOLEAN_KEYS = ['embers', 'structures', 'walls'] as const;
 /** The abyss noise scrolls slowly, so it wraps far later than the embers (which stay on 600). */
 const ABYSS_PERIOD = 6000;
 
+const UP = new Vector3(0, 1, 0);
+
+/**
+ * Bakes placements into one merged Mesh per distinct kit material (so one draw call each). Kit geometry is
+ * cloned and transformed, never modified; placements whose piece the kit lacks are skipped. Attributes that
+ * not every geometry of a material carries are dropped before merging (the forge kit needs only position and
+ * normal), and mixed indexed/non-indexed geometries are flattened, so mergeGeometries cannot fail on them.
+ * The meshes own their merged geometry; the materials stay the kit's.
+ */
+export function bakeByMaterial(placements: Placement[], kit: Pick<ForgeKit, 'prototype'>): Mesh[] {
+  const groups = new Map<Material, BufferGeometry[]>();
+  const matrix = new Matrix4();
+  const quaternion = new Quaternion();
+  const position = new Vector3();
+  const scale = new Vector3();
+  for (const placement of placements) {
+    const parts = kit.prototype(placement.piece);
+    if (!parts) continue;
+    matrix.compose(position.fromArray(placement.position), quaternion.setFromAxisAngle(UP, placement.rotationY), scale.fromArray(placement.scale));
+    for (const part of parts) {
+      const clones = groups.get(part.material) ?? [];
+      clones.push(part.geometry.clone().applyMatrix4(matrix));
+      groups.set(part.material, clones);
+    }
+  }
+  const meshes: Mesh[] = [];
+  for (const [material, clones] of groups) {
+    const shared = Object.keys(clones[0].attributes).filter((name) => clones.every((geometry) => geometry.hasAttribute(name)));
+    const mixed = clones.some((geometry) => geometry.index) && clones.some((geometry) => !geometry.index);
+    const prepared = clones.map((geometry) => {
+      for (const name of Object.keys(geometry.attributes)) if (!shared.includes(name)) geometry.deleteAttribute(name);
+      if (!mixed || !geometry.index) return geometry;
+      const flat = geometry.toNonIndexed();
+      geometry.dispose();
+      return flat;
+    });
+    const merged = mergeGeometries(prepared);
+    for (const geometry of prepared) geometry.dispose();
+    if (!merged) continue;
+    const mesh = new Mesh(merged, material);
+    mesh.name = 'structures';
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    meshes.push(mesh);
+  }
+  return meshes;
+}
+
 /** The forge cavern around the level: a dome that rides the camera and a molten abyss under the floor. */
 export class ForgeCavern {
   /** World space: the abyss (and later embers and structures). */
@@ -40,6 +104,9 @@ export class ForgeCavern {
   private emberBounds: CavernBounds | null = null;
   private time = 0;
   private pixelRatio = 1;
+  private kit: ForgeKit | null = null;
+  private structures: Mesh[] = [];
+  private structureKey: string | null = null;
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
     uAbyssTime: { value: 0 },
@@ -75,14 +142,22 @@ export class ForgeCavern {
   setDetail(detail: CavernDetail, embers: number): void {
     this.emberCount = Math.max(0, Math.floor(embers));
     this.syncEmbers();
-    if (detail === this.detail) return;
-    this.detail = detail;
-    this.domeMesh.geometry.dispose();
-    (this.domeMesh.material as ShaderMaterial).dispose();
-    this.domeMesh.geometry = this.domeGeometry(detail);
-    this.domeMesh.material = this.domeMaterial(detail);
-    (this.abyssMesh.material as ShaderMaterial).dispose();
-    this.abyssMesh.material = this.abyssMaterial(detail);
+    if (detail !== this.detail) {
+      this.detail = detail;
+      this.domeMesh.geometry.dispose();
+      (this.domeMesh.material as ShaderMaterial).dispose();
+      this.domeMesh.geometry = this.domeGeometry(detail);
+      this.domeMesh.material = this.domeMaterial(detail);
+      (this.abyssMesh.material as ShaderMaterial).dispose();
+      this.abyssMesh.material = this.abyssMaterial(detail);
+    }
+    this.syncStructures();
+  }
+
+  /** Hands over the forge kit (or null) the structures are baked from. */
+  setKit(kit: ForgeKit | null): void {
+    this.kit = kit;
+    this.syncStructures();
   }
 
   /** Sizes and centres the abyss for a level, or for the menu. A repeat call with equal arguments does nothing. */
@@ -101,6 +176,7 @@ export class ForgeCavern {
     this.abyssMesh.geometry = geometry;
     this.abyssMesh.position.set((minX + maxX) / 2, ABYSS_Y, (minZ + maxZ) / 2);
     this.syncEmbers();
+    this.syncStructures();
   }
 
   /** What the cavern was last mounted for; structures read this. */
@@ -135,6 +211,7 @@ export class ForgeCavern {
       if (typeof value === 'boolean') CAVERN[key] = value;
     }
     if (this.embers) this.embers.points.visible = CAVERN.embers;
+    for (const mesh of this.structures) mesh.visible = CAVERN.structures;
     this.uniforms.uCrackHdr.value = CAVERN.crackHdr;
     this.uniforms.uGlow.value = CAVERN.glow;
     this.uniforms.uFlow.value = CAVERN.flow;
@@ -160,6 +237,22 @@ export class ForgeCavern {
     this.embers.setPixelRatio(this.pixelRatio);
     this.embers.points.visible = CAVERN.embers;
     this.group.add(this.embers.points);
+  }
+
+  /** Rebakes the structures only when the detail, bounds, slabs, seed or kit presence have changed. */
+  private syncStructures(): void {
+    const key = [this.detail, JSON.stringify(this.bounds), JSON.stringify(this.slabs.map((s) => [s.position, s.size])), this.seed, this.kit ? 1 : 0].join('|');
+    if (key === this.structureKey) return;
+    this.structureKey = key;
+    for (const mesh of this.structures) {
+      this.group.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.structures = this.kit ? bakeByMaterial(placeStructures(this.bounds, this.slabs, this.detail, this.seed), this.kit) : [];
+    for (const mesh of this.structures) {
+      mesh.visible = CAVERN.structures;
+      this.group.add(mesh);
+    }
   }
 
   private domeGeometry(detail: CavernDetail): BufferGeometry {
