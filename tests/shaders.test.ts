@@ -83,6 +83,14 @@ describe('rock wall shader', () => {
   });
 });
 
+describe('FORGE_FRAG charge', () => {
+  it('declares the charge uniform and applies the brightness and scan-speed terms', () => {
+    expect(FORGE_FRAG).toContain('uniform float charge');
+    expect(FORGE_FRAG).toContain('(1.0 + 1.5 * charge)');
+    expect(FORGE_FRAG).toContain('time * (4.0 + 8.0 * charge)');
+  });
+});
+
 describe('smoothstep edges', () => {
   it('never reverses numeric-literal edges in any shader', () => {
     const call = /smoothstep\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,/g;

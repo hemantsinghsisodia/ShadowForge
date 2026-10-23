@@ -6,12 +6,14 @@ import { CAMERA_DISTANCE } from './CameraConstants';
 
 export { CAMERA_DISTANCE };
 
+export const BASE_FOV = 58;
+
 const target = new Vector3();
 const desired = new Vector3();
 
 /** Third-person orbit. Pulls in when a collision box sits between the camera and the robot. */
 export class CameraRig {
-  readonly camera = new PerspectiveCamera(58, 1, 0.08, 180);
+  readonly camera = new PerspectiveCamera(BASE_FOV, 1, 0.08, 180);
   yaw = 0;
   pitch = 0.42;
   distance = CAMERA_DISTANCE;
@@ -27,6 +29,14 @@ export class CameraRig {
 
   resize(width: number, height: number): void {
     this.camera.aspect = width / Math.max(1, height);
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Offsets the field of view by `deg` from BASE_FOV; the projection is rebuilt only when it actually moves. */
+  kick(deg: number): void {
+    const fov = BASE_FOV + deg;
+    if (Math.abs(fov - this.camera.fov) <= 0.01) return;
+    this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
   }
 

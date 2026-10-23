@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CHARGE_END,
   FORGE_END,
@@ -15,6 +15,10 @@ import {
   type ForgeFrame,
 } from '../src/effects/ForgeTimeline';
 import { prefersReducedMotion } from '../src/core/device';
+import { PerspectiveCamera } from 'three';
+import { BASE_FOV, CameraRig } from '../src/player/CameraRig';
+import { FORGE_LIGHT_PEAK, ForgeSurface, forgeLightPoint } from '../src/shadows/ForgeSurface';
+import type { SurfaceDef } from '../src/shadows/types';
 
 function frame(): ForgeFrame {
   return { charge: 0, flash: 0, exposure: 0, bloom: 0, ca: 0, fovKick: 0, shake: 0, light: 0, impact: false };
@@ -164,5 +168,68 @@ describe('rise and collapse', () => {
 describe('prefersReducedMotion', () => {
   it('is false where matchMedia is missing (node)', () => {
     expect(prefersReducedMotion()).toBe(false);
+  });
+});
+
+function surface(axisU: [number, number, number], axisV: [number, number, number]): SurfaceDef {
+  return {
+    id: 's',
+    origin: { x: 2, y: 1, z: -3 },
+    axisU: { x: axisU[0], y: axisU[1], z: axisU[2] },
+    axisV: { x: axisV[0], y: axisV[1], z: axisV[2] },
+    sizeU: 4,
+    sizeV: 4,
+    cell: 1,
+    cols: 4,
+    rows: 4,
+    kind: 'floor',
+    rise: 0,
+    unstable: false,
+    decayTime: 12,
+  };
+}
+
+describe('CameraRig.kick', () => {
+  it('kicks the fov and returns to BASE_FOV', () => {
+    const rig = new CameraRig();
+    expect(rig.camera.fov).toBe(BASE_FOV);
+    rig.kick(5);
+    expect(rig.camera.fov).toBe(BASE_FOV + 5);
+    rig.kick(0);
+    expect(rig.camera.fov).toBe(BASE_FOV);
+  });
+
+  it('skips the projection update when the fov has not moved', () => {
+    const rig = new CameraRig();
+    const spy = vi.spyOn(rig.camera as PerspectiveCamera, 'updateProjectionMatrix');
+    rig.kick(0);
+    rig.kick(0);
+    rig.kick(0.005);
+    expect(spy).not.toHaveBeenCalled();
+    rig.kick(3);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ForgeSurface charge', () => {
+  it('starts uncharged and writes the charge uniform', () => {
+    const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
+    expect(forge.material.uniforms.charge.value).toBe(0);
+    forge.setCharge(0.7);
+    expect(forge.material.uniforms.charge.value).toBe(0.7);
+  });
+});
+
+describe('forgeLightPoint', () => {
+  it('sits 0.6 along the plate normal (axisU x axisV) from the origin', () => {
+    const out = { x: 0, y: 0, z: 0 };
+    forgeLightPoint(surface([1, 0, 0], [0, 0, -1]), 0.6, out);
+    expect(out.x).toBeCloseTo(2, 10);
+    expect(out.y).toBeCloseTo(1.6, 10);
+    expect(out.z).toBeCloseTo(-3, 10);
+  });
+
+  it('peaks at 120', () => {
+    expect(FORGE_LIGHT_PEAK).toBe(120);
   });
 });

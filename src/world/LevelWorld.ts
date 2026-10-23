@@ -33,7 +33,7 @@ import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
 import type { QualityProfile } from '../settings/Settings';
 import type { CasterVolume } from '../shadows/types';
-import { ForgeSurface } from '../shadows/ForgeSurface';
+import { FORGE_LIGHT_PEAK, ForgeSurface, forgeLightPoint } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
@@ -101,6 +101,9 @@ export class LevelWorld {
   /** X range the sun's shadow camera covers; follows the level, restored by every `applyShadowSize`. */
   private shadowFrame = { centreX: 0, halfX: 40 };
   private accent = new Color(0x5ce1ff);
+  /** The one light that swells at the plate during a forge. Medium / high cavern tiers only; never added or removed per frame. */
+  private forgeLight: PointLight | null = null;
+  private readonly forgePoint = { x: 0, y: 0, z: 0 };
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
   private gl: WebGLRenderer | null = null;
@@ -163,6 +166,41 @@ export class LevelWorld {
       this.mountRims();
     }
     this.cavern.setDetail(profile.cavern, profile.embers);
+    this.syncForgeLight();
+  }
+
+  /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */
+  private syncForgeLight(): void {
+    const want = this.config !== null && this.profile !== null && this.profile.cavern !== 'low';
+    if (want && !this.forgeLight) {
+      this.forgeLight = new PointLight(this.accent, 0, 7, 2);
+      this.forgeLight.castShadow = false;
+      this.root.add(this.forgeLight);
+    } else if (!want && this.forgeLight) {
+      this.root.remove(this.forgeLight);
+      this.forgeLight = null;
+    }
+  }
+
+  /** Plate charge-up on one surface, 0..1. A null id applies to every surface (use it to reset). */
+  setForgeCharge(surfaceId: string | null, c: number): void {
+    for (const forge of this.forges) {
+      if (surfaceId === null || forge.def.id === surfaceId) forge.setCharge(c);
+    }
+  }
+
+  /** Swells the forge light at `surfaceId`'s plate: centre + normal * 0.6, intensity k * FORGE_LIGHT_PEAK. A null id (or Low tier) leaves it dark. */
+  setForgeLight(surfaceId: string | null, k: number): void {
+    const light = this.forgeLight;
+    if (!light) return;
+    const forge = surfaceId === null ? undefined : this.forges.find((f) => f.def.id === surfaceId);
+    if (!forge) {
+      light.intensity = 0;
+      return;
+    }
+    forgeLightPoint(forge.def, 0.6, this.forgePoint);
+    light.position.set(this.forgePoint.x, this.forgePoint.y, this.forgePoint.z);
+    light.intensity = k * FORGE_LIGHT_PEAK;
   }
 
   /** Marks `surfaceId` so the next `sync` raises its new obsidian out of the plate instead of popping it in. */
@@ -295,6 +333,7 @@ export class LevelWorld {
       this.forges.push(forge);
       this.root.add(forge.mesh);
     }
+    this.syncForgeLight();
     for (const console of config.consoles) {
       const group = this.makeConsole();
       group.position.set(console.position[0], console.position[1], console.position[2]);
@@ -509,6 +548,7 @@ export class LevelWorld {
     this.sun = null;
     this.hemi = null;
     this.underLight = null;
+    this.forgeLight = null;
     this.bounds = null;
     this.pillars = [];
     this.platformViews = [];
