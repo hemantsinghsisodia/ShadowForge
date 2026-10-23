@@ -23,7 +23,7 @@ describe('particle shaders', () => {
     expect(DUST_INTENSITY).toBe(0.6);
   });
 
-  it('halves the rendered alpha of dust motes', () => {
+  it('keeps the dust mote alpha at the faint 0.3 level', () => {
     expect(DUST_ALPHA).toBe(0.3);
   });
 });

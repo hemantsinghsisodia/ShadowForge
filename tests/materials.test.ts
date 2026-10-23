@@ -1,7 +1,17 @@
 import { MeshStandardMaterial, Texture } from 'three';
 import { describe, expect, it } from 'vitest';
 import { LIGHTING } from '../src/world/Lighting';
-import { setLabEnv } from '../src/world/Materials';
+import { labBaseColors, setLabEnv } from '../src/world/Materials';
+
+describe('lab base colours', () => {
+  it('uses LIGHTING floor and wall tints, not white', () => {
+    const colors = labBaseColors();
+    expect(colors.floor).toBe(LIGHTING.floorTint);
+    expect(colors.wall).toBe(LIGHTING.wallTint);
+    expect(colors.floor).not.toBe(0xffffff);
+    expect(colors.wall).not.toBe(0xffffff);
+  });
+});
 
 describe('lab material environment', () => {
   const make = () => [new MeshStandardMaterial(), new MeshStandardMaterial({ envMapIntensity: 3 })];

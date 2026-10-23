@@ -135,7 +135,10 @@ export class LevelWorld {
 
   /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
   applyLighting(partial: Partial<LightingConfig>): void {
-    Object.assign(LIGHTING, partial);
+    const target = LIGHTING as unknown as Record<string, number>;
+    for (const [key, value] of Object.entries(partial)) {
+      if (typeof value === 'number' && Number.isFinite(value)) target[key] = value;
+    }
     if (this.sun) {
       this.sun.intensity = LIGHTING.sun;
       this.sun.color.setHex(LIGHTING.sunColor);

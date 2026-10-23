@@ -174,20 +174,26 @@ export function worldUvBox(width: number, height: number, depth: number, tile: n
   return geometry;
 }
 
+/** Base colours for the procedural floor and wall, taken from the lighting config. */
+export function labBaseColors(): { floor: number; wall: number } {
+  return { floor: LIGHTING.floorTint, wall: LIGHTING.wallTint };
+}
+
 export function createLabMaterials(): LabMaterials {
+  const base = labBaseColors();
   const floorTex = floorMap();
   const wallTex = wallMap();
   const metal = metalMap();
   const floor = new MeshStandardMaterial({
     map: floorTex,
     roughnessMap: roughness(0.72),
-    color: 0xffffff,
+    color: base.floor,
     metalness: 0.45,
     roughness: 0.72,
   });
   const wall = new MeshStandardMaterial({
     map: wallTex,
-    color: 0xffffff,
+    color: base.wall,
     metalness: 0.35,
     roughness: 0.8,
   });
