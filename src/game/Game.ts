@@ -19,6 +19,7 @@ import { SaveManager } from '../save/SaveManager';
 import { initialAppliedQuality, profileFor, type AppliedQuality, type QualityMode, type Settings } from '../settings/Settings';
 import { ShadowManager } from '../shadows/ShadowManager';
 import { Ui, formatTime, type HudState } from '../ui/Ui';
+import { FORGE, MENU_FOG_DENSITY, cavernFog } from '../world/ForgePalette';
 import { LIGHTING } from '../world/Lighting';
 import { LevelWorld } from '../world/LevelWorld';
 
@@ -93,8 +94,8 @@ export class Game {
     this.audio.onCaption = (text) => this.ui.caption(text);
     this.applySettings();
     this.player.group.visible = false;
-    this.scene.background = new Color(0x07080e);
-    this.scene.fog = new FogExp2(0x07080e, 0.08);
+    this.scene.background = new Color(FORGE.top);
+    this.scene.fog = new FogExp2(cavernFog(), MENU_FOG_DENSITY);
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('error', (event) => this.ui.error(event.message || 'Something went wrong'));
     window.addEventListener('unhandledrejection', (event) => {
@@ -618,8 +619,8 @@ export class Game {
     this.releasePointer();
     this.world.showMenu(true);
     this.player.group.visible = false;
-    this.scene.background = new Color(0x07080e);
-    this.scene.fog = new FogExp2(0x07080e, 0.08);
+    this.scene.background = new Color(FORGE.top);
+    this.scene.fog = new FogExp2(cavernFog(), MENU_FOG_DENSITY);
     this.world.backdrop.setTint(new Color(0x9eb6ff), new Color(0x07080e));
     this.state.set('MENU');
     this.ui.show('menu');
