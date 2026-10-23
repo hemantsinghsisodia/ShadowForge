@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeShadowMask, segmentHitsCaster } from '../src/shadows/math';
+import { cellCenter, computeShadowMask, edgePoints, maskEdgeCells, segmentHitsCaster } from '../src/shadows/math';
 import type { CasterVolume, LightVolume, SurfaceDef } from '../src/shadows/types';
 
 function boxCaster(partial: Partial<CasterVolume> = {}): CasterVolume {
@@ -86,5 +86,65 @@ describe('shadow masks', () => {
     const off = { ...key, enabled: false };
     const mask = computeShadowMask(floor, [off], [caster]);
     expect(mask.reduce((sum, v) => sum + v, 0)).toBe(0);
+  });
+});
+
+function blockMask(cols: number, rows: number, c0: number, r0: number, w: number, h: number): Uint8Array {
+  const mask = new Uint8Array(cols * rows);
+  for (let r = r0; r < r0 + h; r++) for (let c = c0; c < c0 + w; c++) mask[r * cols + c] = 1;
+  return mask;
+}
+
+describe('maskEdgeCells', () => {
+  it('gives the 8 ring cells of a 3x3 block', () => {
+    const cells = maskEdgeCells(blockMask(5, 5, 1, 1, 3, 3), 5, 5);
+    expect(cells).toHaveLength(8);
+    expect(cells).not.toContain(2 * 5 + 2);
+  });
+
+  it('gives 1 for a single cell and 0 for an empty mask', () => {
+    expect(maskEdgeCells(blockMask(5, 5, 2, 2, 1, 1), 5, 5)).toEqual([12]);
+    expect(maskEdgeCells(new Uint8Array(25), 5, 5)).toEqual([]);
+  });
+
+  it('treats the grid boundary as an unset neighbour', () => {
+    expect(maskEdgeCells(blockMask(4, 4, 0, 0, 4, 4), 4, 4)).toHaveLength(12);
+  });
+});
+
+describe('edgePoints', () => {
+  const full = blockMask(4, 4, 0, 0, 4, 4);
+
+  it('returns xyz for every edge cell when under the cap', () => {
+    const pts = edgePoints(floor, full, 100);
+    expect(pts).toHaveLength(12 * 3);
+    const first = cellCenter(floor, 0, 0);
+    expect([pts[0], pts[1], pts[2]]).toEqual([first.x, first.y, first.z]);
+  });
+
+  it('stride-samples to maxPoints and keeps both ends of the edge list', () => {
+    const pts = edgePoints(floor, full, 5);
+    expect(pts).toHaveLength(15);
+    const first = cellCenter(floor, 0, 0);
+    const last = cellCenter(floor, 3, 3);
+    expect(pts[0]).toBeCloseTo(first.x, 6);
+    expect(pts[2]).toBeCloseTo(first.z, 6);
+    expect(pts[12]).toBeCloseTo(last.x, 6);
+    expect(pts[14]).toBeCloseTo(last.z, 6);
+  });
+
+  it('reuses a large enough out buffer and returns a subarray of the needed length', () => {
+    const out = new Float32Array(60);
+    const pts = edgePoints(floor, full, 100, out);
+    expect(pts.buffer).toBe(out.buffer);
+    expect(pts).toHaveLength(36);
+  });
+
+  it('allocates when out is too small and returns empty for an empty mask', () => {
+    const out = new Float32Array(3);
+    const pts = edgePoints(floor, full, 100, out);
+    expect(pts.buffer).not.toBe(out.buffer);
+    expect(pts).toHaveLength(36);
+    expect(edgePoints(floor, new Uint8Array(16), 10)).toHaveLength(0);
   });
 });

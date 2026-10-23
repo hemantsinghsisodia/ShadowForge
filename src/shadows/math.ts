@@ -309,6 +309,46 @@ export function greedyRects(mask: Uint8Array, cols: number, rows: number): Rect[
   return rects;
 }
 
+/** Indices of set cells with an unset (or out-of-grid) 4-neighbour, in row-major order. */
+export function maskEdgeCells(mask: Uint8Array, cols: number, rows: number): number[] {
+  const cells: number[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      if (!mask[index]) continue;
+      if (
+        col === 0 ||
+        col === cols - 1 ||
+        row === 0 ||
+        row === rows - 1 ||
+        !mask[index - 1] ||
+        !mask[index + 1] ||
+        !mask[index - cols] ||
+        !mask[index + cols]
+      ) {
+        cells.push(index);
+      }
+    }
+  }
+  return cells;
+}
+
+/** Packed world xyz of edge-cell centres, stride-sampled evenly (ends included) down to `maxPoints`. */
+export function edgePoints(def: SurfaceDef, mask: Uint8Array, maxPoints: number, out?: Float32Array): Float32Array {
+  const edges = maskEdgeCells(mask, def.cols, def.rows);
+  const n = Math.max(0, Math.min(edges.length, Math.floor(maxPoints)));
+  const result = out && out.length >= n * 3 ? out.subarray(0, n * 3) : new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const k = n === edges.length ? i : n === 1 ? 0 : Math.round((i * (edges.length - 1)) / (n - 1));
+    const index = edges[k];
+    const p = cellCenter(def, index % def.cols, Math.floor(index / def.cols));
+    result[i * 3] = p.x;
+    result[i * 3 + 1] = p.y;
+    result[i * 3 + 2] = p.z;
+  }
+  return result;
+}
+
 function uAt(surface: SurfaceDef, col: number): number {
   return col * surface.cell - surface.sizeU / 2;
 }

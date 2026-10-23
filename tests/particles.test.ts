@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage, Scene } from 'three';
-import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY, DUST_ALPHA, ParticleManager } from '../src/effects/ParticleManager';
+import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY, DUST_ALPHA, ParticleManager, luminance, kindIntensity, SPARK_TARGET_LUMA } from '../src/effects/ParticleManager';
 
 describe('particle shaders', () => {
   it('declares its own colour attribute instead of the built-in one', () => {
@@ -87,5 +87,39 @@ describe('dust colour', () => {
     for (const n of ['position', 'aColor', 'size', 'alpha']) {
       expect((geo.getAttribute(n) as BufferAttribute).usage).toBe(DynamicDrawUsage);
     }
+  });
+});
+
+describe('luminance targeted intensity', () => {
+  it('computes linear Rec709 luma', () => {
+    expect(luminance(0x000000)).toBe(0);
+    expect(luminance(0xffffff)).toBeCloseTo(1, 5);
+    expect(luminance(0xff0000)).toBeCloseTo(0.2126, 4);
+  });
+
+  it('scales sparks and shards so colour times intensity lands near the target luma', () => {
+    const hex = 0x5ce1ff;
+    expect(SPARK_TARGET_LUMA).toBe(3.0);
+    expect(kindIntensity(hex, 'spark') * luminance(hex)).toBeCloseTo(3, 5);
+    expect(kindIntensity(hex, 'shard') * luminance(hex)).toBeCloseTo(3, 5);
+  });
+
+  it('clamps to [1, 12]', () => {
+    expect(kindIntensity(0xffffff, 'spark')).toBe(3);
+    expect(kindIntensity(0x000000, 'spark')).toBe(12);
+    expect(kindIntensity(0x020202, 'shard')).toBe(12);
+    expect(kindIntensity(0x0a0a0a, 'spark')).toBeLessThanOrEqual(12);
+  });
+
+  it('keeps the ember intensity fixed', () => {
+    expect(kindIntensity(0x5ce1ff, 'ember')).toBe(2.0);
+    expect(kindIntensity(0x000000, 'ember')).toBe(2.0);
+  });
+
+  it('defaults burst colour to the luminance-targeted intensity', () => {
+    const pm = new ParticleManager(new Scene(), 4);
+    pm.burst(0, 0, 0, 1, 0xff0000, 'spark');
+    const colors = (pm as unknown as { geometry: BufferGeometry }).geometry.getAttribute('aColor');
+    expect(colors.getX(0)).toBeCloseTo(kindIntensity(0xff0000, 'spark'), 4);
   });
 });
