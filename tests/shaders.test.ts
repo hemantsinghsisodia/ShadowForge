@@ -98,6 +98,8 @@ describe('beam shimmer shader', () => {
     expect(BEAM_FRAG).toContain('strength * 0.34');
     expect(BEAM_FRAG).toContain('mix(0.75, 1.15,');
     expect(BEAM_FRAG).not.toContain('0.28');
+    expect(BEAM_FRAG).toContain('vUv.y * 6.0 + time * 0.35');
+    expect(BEAM_FRAG).not.toContain('vUv.y * 6.0 - time');
   });
 });
 

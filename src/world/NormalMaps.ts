@@ -63,7 +63,7 @@ function dentDepth(list: Dent[], x: number, y: number, size: number): number {
     if (dx >= dent.radius) continue;
     const dy = wrapDist(y, dent.y, size);
     if (dy >= dent.radius) continue;
-    const t = Math.hypot(dx, dy) / dent.radius;
+    const t = Math.sqrt(dx * dx + dy * dy) / dent.radius;
     if (t < 1) total += dent.depth * smooth(1 - t);
   }
   return total;
@@ -90,7 +90,7 @@ export function heightToNormal(heights: Float32Array, w: number, h: number, stre
       let nx = -(heights[row + right] - heights[row + left]) * strength;
       let ny = -(heights[down + x] - heights[up + x]) * strength;
       let nz = 1;
-      const inv = 1 / Math.hypot(nx, ny, nz);
+      const inv = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz);
       nx *= inv;
       ny *= inv;
       nz *= inv;

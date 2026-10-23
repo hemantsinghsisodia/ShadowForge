@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { KIT, type EnvKit } from '../src/world/EnvKit';
 import { buildKitFloor } from '../src/world/LabDressing';
 import { LEVELS, getLevel } from '../src/levels';
-import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp } from '../src/world/LampShadow';
+import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp, releaseLampShadow } from '../src/world/LampShadow';
 
 describe('pickShadowLamp', () => {
   it('picks the spotlight on level 6', () => {
@@ -74,5 +74,16 @@ describe('disposeLightShadows', () => {
     disposeLightShadows([a, undefined, null, b, {}]);
     expect(a.shadow.dispose).toHaveBeenCalledTimes(1);
     expect(b.shadow.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('releaseLampShadow', () => {
+  it('disposes the shadow map and clears it so three re-creates it later', () => {
+    const dispose = vi.fn();
+    const light = { shadow: { dispose, map: {} as unknown, mapPass: {} as unknown } };
+    releaseLampShadow(light);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(light.shadow.map).toBeNull();
+    expect(light.shadow.mapPass).toBeNull();
   });
 });

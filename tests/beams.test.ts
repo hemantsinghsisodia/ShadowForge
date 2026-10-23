@@ -39,4 +39,9 @@ describe('beam shimmer', () => {
     expect(view.material.fog).toBe(false);
     expect(BEAM_FRAG).not.toContain('fog_fragment');
   });
+
+  it('halo stays unfogged like the cone', () => {
+    const view = createBeam(new Color(0xffffff));
+    expect(view.halo.material.fog).toBe(false);
+  });
 });

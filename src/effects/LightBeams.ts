@@ -59,7 +59,7 @@ void main() {
   float along = smoothstep(0.0, 0.2, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
   float dist = length(cameraPosition - vWorld);
   float nearFade = smoothstep(0.6, 2.4, dist);
-  float shimmer = mix(0.75, 1.15, beamNoise(vec2(vUv.y * 6.0 - time * 0.35, vUv.x * 8.0)));
+  float shimmer = mix(0.75, 1.15, beamNoise(vec2(vUv.y * 6.0 + time * 0.35, vUv.x * 8.0)));
   float alpha = fres * along * strength * 0.34 * nearFade * shimmer;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
@@ -116,6 +116,7 @@ export function createBeam(color: Color): BeamView {
       depthWrite: false,
       blending: AdditiveBlending,
       opacity: 0.85,
+      fog: false,
     }),
   );
   halo.scale.set(0.7, 0.7, 1);

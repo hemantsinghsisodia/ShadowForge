@@ -43,7 +43,7 @@ import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { levelBounds, sunShadowFrame } from './CavernLayout';
-import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp } from './LampShadow';
+import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp, releaseLampShadow } from './LampShadow';
 import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -183,7 +183,10 @@ export class LevelWorld {
   /** Turns the shadow lamp's shadow on or off to match the tier. The shadow parameters are set once in makeLamp. */
   private syncLampShadow(): void {
     const view = this.shadowLampId === null ? undefined : this.lamps.get(this.shadowLampId);
-    if (view) view.light.castShadow = this.profile?.lampShadows ?? false;
+    if (!view) return;
+    const want = this.profile?.lampShadows ?? false;
+    if (view.light.castShadow && !want) releaseLampShadow(view.light);
+    view.light.castShadow = want;
   }
 
   /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */

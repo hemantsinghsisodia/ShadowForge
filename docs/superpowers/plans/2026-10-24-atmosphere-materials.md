@@ -49,7 +49,7 @@
 QualityProfile.lampShadows: boolean // true on high only
 // helper
 export function pickShadowLamp(config: LevelConfig): string | null; // id of the lamp to cast shadows: the first 'spotlight' lamp; else the lamp whose position is nearest (XZ) to the first surface's origin; null when there are no lamps
-export const LAMP_SHADOW = { mapSize: 512, bias: -0.0005, normalBias: 0.02, radius: 2 } as const;
+export const LAMP_SHADOW = { mapSize: 512, bias: -0.002, normalBias: 0.05, radius: 2 } as const;
 ```
 
 **Behaviour:**
@@ -149,3 +149,10 @@ setBeamTime(view: BeamView, time: number): void; // writes uniform `time`
   - High desktop: `__SF.fps()` ≥ 55.
   - Medium phone emulation: ≥ 55.
 - [ ] **Wrap-up:** tune, bake the values, then a whole-phase Sonnet review.
+
+---
+
+## Known limits
+- Kit floor tiles use the Kenney colour atlas UVs, so they keep their baked look.
+- The floor normal map shows on slab sides, tall blocks and the menu floor.
+- Giving kit tiles relief needs a second UV set or triplanar mapping. That is future work.
