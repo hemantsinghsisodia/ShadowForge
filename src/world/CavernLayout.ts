@@ -26,6 +26,8 @@ import { ABYSS_Y } from './ForgePalette';
  * lie entirely inside their own slab's XZ footprint (inset 0.6, wider than any piece), beneath the slab,
  * and the camera is always above the floor, so they cannot occlude and are exempt from (a). Rule (b)
  * and footprint containment govern them instead. Every other role ('tower', 'link') obeys (a).
+ * Supports are visual only (no collision), so only slabs with bottom <= 0 get them, and any single piece whose
+ * column from the abyss to its top would pass through another platform's footprint is dropped.
  */
 
 export interface Placement {
@@ -59,6 +61,9 @@ const LAMP_H = 1.78;
 const INSET = 0.6;
 /** Closer than this, two 0.56 m pillars would overlap. */
 const MIN_COLUMN_GAP = 0.6;
+/** Half the diagonal of the 0.56 m pillar: its XZ reach at any yaw. */
+const PILLAR_REACH = 0.4;
+const BEAM_HALF_Z = 0.11;
 const SUPPORT_SPACING = 6;
 const TOWER_SPACING = 12;
 const TOWER_OVERSHOOT = 10;
@@ -95,10 +100,23 @@ function along(a: number, b: number, minSegments = 1): number[] {
   return Array.from({ length: segments + 1 }, (_, i) => a + ((b - a) * i) / segments);
 }
 
-function supports(slab: PlatformConfig, rand: () => number, full: boolean): Placement[] {
+/** True if a column with this XZ half-extent, from the abyss up to `top`, runs through another platform's footprint. */
+function pierces(x: number, z: number, halfX: number, halfZ: number, top: number, others: PlatformConfig[]): boolean {
+  return others.some(
+    (o) =>
+      o.position[1] - o.size[1] / 2 < top - 1e-9 &&
+      x + halfX > o.position[0] - o.size[0] / 2 + 1e-9 &&
+      x - halfX < o.position[0] + o.size[0] / 2 - 1e-9 &&
+      z + halfZ > o.position[2] - o.size[2] / 2 + 1e-9 &&
+      z - halfZ < o.position[2] + o.size[2] / 2 - 1e-9,
+  );
+}
+
+function supports(slab: PlatformConfig, others: PlatformConfig[], rand: () => number, full: boolean): Placement[] {
   const [w, h, d] = slab.size;
   const bottom = slab.position[1] - h / 2;
-  if (bottom <= ABYSS_Y + 1) return [];
+  // Only floor-level slabs get supports. Under a raised slab a pillar would run up through the walkable floor.
+  if (bottom > 0 || bottom <= ABYSS_Y + 1) return [];
   const x0 = slab.position[0] - w / 2 + INSET;
   const x1 = slab.position[0] + w / 2 - INSET;
   const z0 = slab.position[2] - d / 2 + INSET;
@@ -122,6 +140,8 @@ function supports(slab: PlatformConfig, rand: () => number, full: boolean): Plac
   }
   const out: Placement[] = [];
   for (const [x, z] of spots.values()) {
+    // Worst-case half-extent of a yawed pillar. Pieces that would pass through another platform are dropped.
+    if (pierces(x, z, PILLAR_REACH, PILLAR_REACH, bottom, others)) continue;
     out.push({
       piece: FORGE_KIT.pillar,
       position: [x, ABYSS_Y, z],
@@ -135,6 +155,7 @@ function supports(slab: PlatformConfig, rand: () => number, full: boolean): Plac
   const y = bottom - 0.4;
   if (full && span >= 0.5) {
     for (const z of [z0, z1]) {
+      if (pierces(slab.position[0], z, span / 2, BEAM_HALF_Z, y + BEAM_H, others)) continue;
       out.push({
         piece: FORGE_KIT.beam,
         position: [slab.position[0], y, z],
@@ -202,9 +223,11 @@ export function placeStructures(bounds: CavernBounds, slabs: PlatformConfig[], d
   if (detail === 'low') return [];
   const rand = mulberry32(seed);
   const out: Placement[] = [];
-  for (const slab of slabs) {
-    if (kitFloorable(slab)) out.push(...supports(slab, rand, detail === 'high'));
-  }
+  slabs.forEach((slab, i) => {
+    if (kitFloorable(slab)) {
+      out.push(...supports(slab, slabs.filter((_, j) => j !== i), rand, detail === 'high'));
+    }
+  });
   out.push(...towers(bounds, detail, rand));
   return out;
 }

@@ -54,10 +54,27 @@ describe('CavernLayout', () => {
         }
       });
 
-      it('every floor slab gets at least 4 supports on high', () => {
+      it('no support runs through another platform, and every support tops at or below the floor', () => {
+        for (const p of placeStructures(bounds, slabs, 'high', 3).filter((q) => q.role === 'support')) {
+          expect(p.top).toBeLessThanOrEqual(0);
+          const halfX = p.piece === 'SHF_Pillar_A' ? 0.4 : p.scale[0];
+          const halfZ = p.piece === 'SHF_Pillar_A' ? 0.4 : 0.11;
+          for (const o of slabs) {
+            const overlaps =
+              p.position[0] + halfX > o.position[0] - o.size[0] / 2 + 1e-6 &&
+              p.position[0] - halfX < o.position[0] + o.size[0] / 2 - 1e-6 &&
+              p.position[2] + halfZ > o.position[2] - o.size[2] / 2 + 1e-6 &&
+              p.position[2] - halfZ < o.position[2] + o.size[2] / 2 - 1e-6;
+            // The slab it hangs from has its bottom at or above the top; any platform reaching below it is a pierce.
+            if (overlaps) expect(o.position[1] - o.size[1] / 2).toBeGreaterThanOrEqual(p.top - 1e-9);
+          }
+        }
+      });
+
+      it('every floor-level slab gets at least 4 supports on high', () => {
         const out = placeStructures(bounds, slabs, 'high', 3).filter((p) => p.role === 'support' && p.piece === 'SHF_Pillar_A');
         for (const s of slabsOf(slabs)) {
-          if (s.position[1] - s.size[1] / 2 <= ABYSS_Y + 1) continue;
+          if (s.position[1] - s.size[1] / 2 > 0) continue;
           const mine = out.filter(
             (p) =>
               Math.abs(p.position[0] - s.position[0]) < s.size[0] / 2 &&
@@ -137,11 +154,22 @@ describe('CavernLayout', () => {
     expect(under.length).toBe(4);
   });
 
-  it('gives raised slabs supports too, topping at their bottom', () => {
+  it('gives raised slabs no supports', () => {
     const bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 };
-    const raised = placeStructures(bounds, [slab(0, 0, 4, 4, 3)], 'high', 1).filter((p) => p.role === 'support' && p.piece === 'SHF_Pillar_A');
-    expect(raised.length).toBe(4);
-    for (const p of raised) expect(p.top).toBeCloseTo(2.75, 9);
+    expect(placeStructures(bounds, [slab(0, 0, 4, 4, 3)], 'high', 1).filter((p) => p.role === 'support')).toEqual([]);
+  });
+
+  it('drops only the support pieces that would pierce another platform', () => {
+    const bounds = { minX: -4, maxX: 4, minZ: -2, maxZ: 2 };
+    // A block reaching below the slab, overlapping its middle: the middle pillars are cut, the corner ones stay.
+    const block: PlatformConfig = { position: [0, -1, 0], size: [2, 3, 4] };
+    const out = placeStructures(bounds, [slab(0, 0, 8, 4), block], 'high', 1).filter((p) => p.role === 'support');
+    const pillars = out.filter((p) => p.piece === 'SHF_Pillar_A');
+    expect(pillars.length).toBeGreaterThan(0);
+    expect(pillars.length).toBe(4);
+    for (const p of pillars) expect(Math.abs(p.position[0]) - 0.4).toBeGreaterThanOrEqual(1 - 1e-6);
+    // The cross beams run through the block too and are dropped.
+    expect(out.filter((p) => p.piece === 'SHF_Structure_Beam')).toEqual([]);
   });
 
   it('adds intermediate pillars along edges longer than 6 m', () => {
