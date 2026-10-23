@@ -44,10 +44,10 @@ const UP = new Vector3(0, 1, 0);
 
 const WALL_HEIGHT = 40;
 const WALL_CENTRE_Y = 6;
-const WALL_DISPLACE = 4;
+const WALL_DISPLACE = 10;
 /** Offset of the near wall pair from the corridor edge; High adds a darker pair behind it. */
-const WALL_NEAR = 22;
-const WALL_FAR = 34;
+const WALL_NEAR = 28;
+const WALL_FAR = 40;
 const WALL_FAR_DARK = 0.6;
 
 /** Deterministic lattice value in [0, 1) for an integer cell, hashed through mulberry32. */
@@ -68,23 +68,25 @@ function vnoise2(x: number, y: number, seed: number): number {
   return top * (1 - uy) + bottom * uy;
 }
 
-/** Two octaves of value noise, normalised to [0, 1). */
+/** Two octaves of ridged value noise (1 - |2n - 1| per octave), normalised to [0, 1]. */
 function fbm2(x: number, y: number, seed: number): number {
-  return (vnoise2(x, y, seed) + 0.5 * vnoise2(x * 2.03, y * 2.03, seed + 1)) / 1.5;
+  const ridge = (n: number) => 1 - Math.abs(2 * n - 1);
+  return (ridge(vnoise2(x, y, seed)) + 0.5 * ridge(vnoise2(x * 2.03, y * 2.03, seed + 1))) / 1.5;
 }
 
 /**
- * A far rock wall: a plane facing +Z (local XY, 40 tall, centred), displaced along +Z by fbm * 4 on the CPU. The
- * normalised fbm is kept as the aRock attribute so the shader can vary the rock tone. Deterministic per seed.
+ * A far rock wall: a plane facing +Z (local XY, 40 tall, centred), displaced along +Z by aRock * WALL_DISPLACE on the CPU. The
+ * ridged fbm, contrast-stretched around 0.5, is the aRock attribute so the shader can vary the rock tone. Deterministic per seed.
  */
 export function rockCard(length: number, segX: number, segY: number, seed: number): BufferGeometry {
   const geometry = new PlaneGeometry(length, WALL_HEIGHT, segX, segY);
   const position = geometry.getAttribute('position');
   const rock = new Float32Array(position.count);
   for (let i = 0; i < position.count; i++) {
-    const n = fbm2(position.getX(i) * 0.08, position.getY(i) * 0.12, seed);
-    rock[i] = n;
-    position.setZ(i, n * WALL_DISPLACE);
+    const n = fbm2(position.getX(i) * 0.14, position.getY(i) * 0.2, seed);
+    const r = Math.min(1, Math.max(0, (n - 0.5) * 2.2 + 0.5));
+    rock[i] = r;
+    position.setZ(i, r * WALL_DISPLACE);
   }
   geometry.setAttribute('aRock', new BufferAttribute(rock, 1));
   geometry.computeVertexNormals();
@@ -325,7 +327,7 @@ export class ForgeCavern {
     const { minX, maxX } = this.bounds;
     const { midZ, halfDepth } = corridor(this.bounds);
     const length = maxX - minX + 120;
-    const [segX, segY] = this.detail === 'low' ? [48, 8] : [96, 12];
+    const [segX, segY] = this.detail === 'low' ? [48, 8] : [96, 16];
     const rows: Array<[number, number]> = [[WALL_NEAR, 1]];
     if (this.detail === 'high') rows.push([WALL_FAR, WALL_FAR_DARK]);
     rows.forEach(([offset, dark], row) => {

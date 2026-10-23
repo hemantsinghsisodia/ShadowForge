@@ -1,4 +1,4 @@
-import { BoxGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, Points, ShaderMaterial } from 'three';
+import { BoxGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, Points, ShaderMaterial, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { LEVELS } from '../src/levels';
 import type { PlatformConfig } from '../src/levels/LevelData';
@@ -391,11 +391,16 @@ describe('rockCard', () => {
     expect(geometry.boundingBox!.max.y).toBeCloseTo(20);
   });
 
-  it('displaces along +Z by aRock * 4 and carries normals', () => {
+  it('stretches aRock across the range: max - min >= 0.6 over one card', () => {
+    const values = rock(rockCard(200, 96, 12, 1));
+    expect(Math.max(...values) - Math.min(...values)).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it('displaces along +Z by aRock * 10 and carries normals', () => {
     const geometry = rockCard(100, 24, 6, 3);
     const position = geometry.getAttribute('position');
     const values = rock(geometry);
-    for (let i = 0; i < position.count; i++) expect(position.getZ(i)).toBeCloseTo(values[i] * 4, 5);
+    for (let i = 0; i < position.count; i++) expect(position.getZ(i)).toBeCloseTo(values[i] * 10, 5);
     expect(geometry.getAttribute('normal').count).toBe(position.count);
   });
 });
@@ -416,11 +421,11 @@ describe('ForgeCavern walls', () => {
     expect(wallMeshes(ready('high'))).toHaveLength(4);
   });
 
-  it('uses 48x8 segments on low and 96x12 otherwise', () => {
+  it('uses 48x8 segments on low and 96x16 otherwise', () => {
     expect(verts(ready('low'))).toBe(2 * 49 * 9);
-    expect(verts(ready('medium'))).toBe(2 * 97 * 13);
-    expect(verts(ready('high'))).toBe(4 * 97 * 13);
-    console.log(`wall verts: low ${2 * 49 * 9}, medium ${2 * 97 * 13}, high ${4 * 97 * 13}`);
+    expect(verts(ready('medium'))).toBe(2 * 97 * 17);
+    expect(verts(ready('high'))).toBe(4 * 97 * 17);
+    console.log(`wall verts: low ${2 * 49 * 9}, medium ${2 * 97 * 17}, high ${4 * 97 * 17}`);
   });
 
   it('places the cards either side of the corridor, facing it', () => {
@@ -429,8 +434,8 @@ describe('ForgeCavern walls', () => {
     const meshes = wallMeshes(cavern);
     const near = meshes.find((m) => m.position.z > midZ)!;
     const far = meshes.find((m) => m.position.z < midZ)!;
-    expect(near.position.z).toBeCloseTo(midZ + halfDepth + 22);
-    expect(far.position.z).toBeCloseTo(midZ - halfDepth - 22);
+    expect(near.position.z).toBeCloseTo(midZ + halfDepth + 28);
+    expect(far.position.z).toBeCloseTo(midZ - halfDepth - 28);
     expect(near.rotation.y).toBeCloseTo(Math.PI);
     expect(far.rotation.y).toBeCloseTo(0);
     for (const m of meshes) {
@@ -441,15 +446,28 @@ describe('ForgeCavern walls', () => {
     }
   });
 
+  it('points each card +Z axis toward the corridor, and keeps the nearest surface >= 18 m from its edge', () => {
+    const { midZ, halfDepth } = corridor(BOUNDS);
+    for (const detail of ['medium', 'high'] as const) {
+      for (const m of wallMeshes(ready(detail))) {
+        m.updateMatrixWorld(true);
+        const axis = new Vector3(0, 0, 1).transformDirection(m.matrixWorld);
+        expect(Math.sign(axis.z)).toBe(Math.sign(midZ - m.position.z));
+        expect(Math.abs(axis.z)).toBeCloseTo(1, 9);
+        expect(Math.abs(m.position.z - midZ) - halfDepth - 10).toBeGreaterThanOrEqual(18);
+      }
+    }
+  });
+
   it('adds a darker outer pair on high', () => {
     const cavern = ready('high');
     const { midZ, halfDepth } = corridor(BOUNDS);
-    const outer = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) > halfDepth + 30);
-    const inner = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) < halfDepth + 30);
+    const outer = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) > halfDepth + 34);
+    const inner = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) < halfDepth + 34);
     expect(outer).toHaveLength(2);
     expect(inner).toHaveLength(2);
     for (const m of outer) {
-      expect(Math.abs(m.position.z - midZ)).toBeCloseTo(halfDepth + 34);
+      expect(Math.abs(m.position.z - midZ)).toBeCloseTo(halfDepth + 40);
       expect((m.material as ShaderMaterial).uniforms.uDark.value).toBeCloseTo(0.6);
     }
     for (const m of inner) expect((m.material as ShaderMaterial).uniforms.uDark.value).toBe(1);

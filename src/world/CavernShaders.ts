@@ -93,19 +93,22 @@ export const MOLTEN_FRAG = `
 export const ROCK_VERT = `
   attribute float aRock;
   varying vec3 vWorld;
+  varying vec3 vNormal;
   varying float vRock;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorld = world.xyz;
+    vNormal = normalize(mat3(modelMatrix) * normal);
     vRock = aRock;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
 
-/** Unlit far walls: near-black rock, lit from below by the abyss glow, fading to the dome's haze with distance. */
+/** Unlit far walls: near-black rock, lit from below by the abyss glow (stronger on rock crests and up-facing ledges), fading to the dome's haze with distance. */
 export const ROCK_FRAG = `
   precision highp float;
   varying vec3 vWorld;
+  varying vec3 vNormal;
   varying float vRock;
   uniform vec3 uGlowCol;
   uniform vec3 uHaze;
@@ -114,8 +117,9 @@ export const ROCK_FRAG = `
   uniform float uPulse;
   uniform float uDark;
   void main() {
-    float rock = 0.03 * (0.5 + vRock);
-    vec3 col = vec3(rock) + uGlowCol * uGlow * exp(-(vWorld.y + 9.0) * 0.16) * uPulse * 0.5;
+    float rock = 0.03 * (0.5 + vRock) * (0.7 + 0.6 * vRock);
+    float ledge = (0.6 + 0.8 * (0.5 + 0.5 * vNormal.y));
+    vec3 col = vec3(rock) + uGlowCol * uGlow * exp(-(vWorld.y + 9.0) * 0.16) * uPulse * 0.5 * mix(0.3, 1.5, smoothstep(0.25, 0.75, vRock)) * ledge;
     col *= uDark;
     col = mix(col, uTop, smoothstep(2.0, 18.0, vWorld.y));
     col = mix(col, uHaze, smoothstep(25.0, 70.0, distance(cameraPosition, vWorld)));

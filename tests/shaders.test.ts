@@ -4,7 +4,7 @@ import { OBSIDIAN_FRAG } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
 import { EMBER_FRAG, EMBER_VERT } from '../src/effects/Embers';
 import { PARTICLE_FRAG } from '../src/effects/ParticleManager';
-import { DOME_FRAG, MOLTEN_FRAG, ROCK_FRAG } from '../src/world/CavernShaders';
+import { DOME_FRAG, MOLTEN_FRAG, ROCK_FRAG, ROCK_VERT } from '../src/world/CavernShaders';
 
 const SHADERS: Array<[string, string]> = [
   ['FORGE_FRAG', FORGE_FRAG],
@@ -63,9 +63,17 @@ describe('rock wall shader', () => {
 
   it('is unlit, glows near the abyss and fades to haze with the abyss distance fade', () => {
     expect(ROCK_FRAG).toContain('exp(-(vWorld.y + 9.0) * 0.16)');
+    expect(ROCK_FRAG).toContain('mix(0.3, 1.5, smoothstep(0.25, 0.75, vRock))');
     expect(ROCK_FRAG).toContain('smoothstep(2.0, 18.0, vWorld.y)');
     expect(ROCK_FRAG).toContain('smoothstep(25.0, 70.0, distance(cameraPosition, vWorld))');
     expect(ROCK_FRAG).not.toMatch(/uTime/);
+  });
+
+  it('shades by the world normal so up-facing ledges catch the glow', () => {
+    expect(ROCK_VERT).toContain('vNormal = normalize(mat3(modelMatrix) * normal)');
+    expect(ROCK_FRAG).toContain('varying vec3 vNormal');
+    expect(ROCK_FRAG).toContain('(0.6 + 0.8 * (0.5 + 0.5 * vNormal.y))');
+    expect(ROCK_FRAG).toContain('(0.7 + 0.6 * vRock)');
   });
 });
 
