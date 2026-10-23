@@ -480,7 +480,7 @@ export class LevelWorld {
 
   /**
    * Swaps the procedural floor visuals for kit tiles once the kit is available. The procedural
-   * boxes stay in place (hidden) and collision never reads either, so a failure leaves the level as it was.
+   * boxes stay in place (tucked under the kit tile) and collision never reads either, so a failure leaves the level as it was.
    */
   private applyKit(kit: EnvKit): void {
     if (!this.config) return;

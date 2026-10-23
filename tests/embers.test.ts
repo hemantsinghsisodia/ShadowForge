@@ -45,6 +45,27 @@ describe('seedEmbers', () => {
     expect(side).toBe(320);
   });
 
+  it('draws sizes in 1.4-3.2 and speeds as multiples of 1/600 within 0.04-0.10', () => {
+    for (const s of seedEmbers(400, BOUNDS, 1337)) {
+      expect(s.size).toBeGreaterThanOrEqual(1.4);
+      expect(s.size).toBeLessThanOrEqual(3.2);
+      expect(s.speed).toBeGreaterThanOrEqual(0.04 - 1e-9);
+      expect(s.speed).toBeLessThanOrEqual(0.1 + 1e-9);
+      expect(Math.abs(s.speed * 600 - Math.round(s.speed * 600))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('has no pop across the 600 s clock wrap', () => {
+    for (const s of seedEmbers(400, BOUNDS, 1337)) {
+      const before = emberState(s, 599.999 % 600);
+      const after = emberState(s, 600 % 600);
+      const lifeBefore = (before.y - ABYSS_Y) / s.rise;
+      const lifeAfter = (after.y - ABYSS_Y) / s.rise;
+      const d = Math.abs(lifeBefore - lifeAfter);
+      expect(Math.min(d, 1 - d)).toBeLessThan(0.01);
+    }
+  });
+
   it('keeps footprint embers below the floor at every moment of their life', () => {
     for (const s of seedEmbers(400, BOUNDS, 1337)) {
       if (Math.abs(s.z - midZ) >= halfDepth) continue;
@@ -147,6 +168,7 @@ describe('Embers', () => {
       'smoothstep(0.0, 0.12, life)',
       'smoothstep(0.65, 1.0, life)',
       '1.6',
+      'min(14.0 * uScale,',
     ]) {
       expect(EMBER_VERT + EMBER_FRAG).toContain(snippet);
     }

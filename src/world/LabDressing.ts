@@ -85,7 +85,7 @@ function place(x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1, sz = 1)
 /**
  * Kit floor visuals over the level's platforms. Collision and shadows keep using config.platforms;
  * tiles cover each slab exactly and never cross a gap.
- * Returns the indices of the platforms it covered, so their procedural boxes can be hidden.
+ * Returns the indices of the platforms it covered, so their procedural boxes can be tucked under the kit tile.
  */
 export function buildKitFloor(kit: EnvKit, platforms: PlatformConfig[]): { group: Group; covered: number[] } | null {
   if (!kit.prototype(KIT.tileA) || !kit.prototype(KIT.tileB)) return null;

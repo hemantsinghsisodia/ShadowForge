@@ -30,8 +30,8 @@ export const LIGHTING: LightingConfig = {
   env: 0.25,
   floorTint: 0x4d5664,
   wallTint: 0x434b58,
-  kitScale: 0.28,
-  under: 0.6,
+  kitScale: 0.22,
+  under: 1.0,
   underColor: 0xff6a2a,
   hemiGround: 0x4a1e0c,
 };

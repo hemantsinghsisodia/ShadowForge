@@ -25,6 +25,9 @@ describe('forge palette', () => {
     expect(c.r).toBeLessThan(0.25);
     expect(cavernFog().getHex()).toBe(FORGE.haze);
     expect(CAVERN.fogDensity).toBe(0.024);
+    expect(CAVERN.glow).toBe(0.8);
+    expect(CAVERN.crackHdr).toBe(3.0);
+    expect(CAVERN.flow).toBe(0.06);
   });
 
   it('mixes in sRGB space', () => {

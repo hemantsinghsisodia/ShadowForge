@@ -54,13 +54,16 @@ export function seedEmbers(count: number, bounds: CavernBounds, seed: number): E
       z = midZ + (rand() < 0.5 ? -off : off);
       rise = SIDE_RISE;
     }
+    const phase = rand();
+    // A multiple of 1/600 keeps fract(600 * speed + phase) continuous across the `% 600` clock wrap.
+    const speed = Math.max(1, Math.round((0.04 + rand() * 0.06) * 600)) / 600;
     seeds.push({
       x,
       z,
-      phase: rand(),
-      speed: 0.04 + rand() * 0.06,
+      phase,
+      speed,
       sway: 0.3 + rand() * 0.9,
-      size: 0.8 + rand() * 1.2,
+      size: 1.4 + rand() * 1.8,
       rise,
     });
   }
@@ -104,7 +107,7 @@ void main() {
   vLife = life;
   vAlpha = smoothstep(0.0, 0.12, life) * (1.0 - smoothstep(0.65, 1.0, life));
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_PointSize = min(10.0 * uScale, aSeed.w * uScale * 60.0 / -mv.z);
+  gl_PointSize = min(14.0 * uScale, aSeed.w * uScale * 60.0 / -mv.z);
   gl_Position = projectionMatrix * mv;
 }
 `;

@@ -14,9 +14,9 @@ export const FORGE = {
 
 /** Mutable on purpose: tuned live from the console. */
 export const CAVERN = {
-  crackHdr: 2.2,
-  glow: 0.5,
-  flow: 0.04,
+  crackHdr: 3.0,
+  glow: 0.8,
+  flow: 0.06,
   fogDensity: 0.024,
   embers: true,
 };

@@ -47,7 +47,7 @@ export type BurstKind = 'spark' | 'ember' | 'shard';
 /** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
 export const DUST_INTENSITY = 0.6;
-/** Warm ash 0xffd0a0, written raw (not colour-managed) like the burst colours since the shader does no conversion. */
+/** Warm ash 0xffd0a0: the raw bytes are treated as linear on purpose, which gives dust a pale warm-ash tint. */
 const DUST_COLOR = { r: 0xff / 255, g: 0xd0 / 255, b: 0xa0 / 255 };
 /** Rendered-alpha multiplier for dust motes so they stay subtle atmosphere. */
 export const DUST_ALPHA = 0.3;

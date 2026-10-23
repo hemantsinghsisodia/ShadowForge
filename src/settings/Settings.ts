@@ -96,7 +96,7 @@ export interface QualityProfile {
   dressingDetail: 'low' | 'high';
   /** Multisample count for the post-processing buffer. 0 on Low, which has no composer. */
   msaa: number;
-  /** Backdrop detail. High is the same on phones and desktops. */
+  /** Cavern detail. High is the same on phones and desktops. */
   cavern: 'low' | 'medium' | 'high';
   /** Ember particle budget. 0 disables them. */
   embers: number;

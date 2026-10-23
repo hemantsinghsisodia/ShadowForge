@@ -12,11 +12,11 @@ describe('lighting config', () => {
     expect(LIGHTING.env).toBe(0.25);
     expect(LIGHTING.floorTint).toBe(0x4d5664);
     expect(LIGHTING.wallTint).toBe(0x434b58);
-    expect(LIGHTING.kitScale).toBe(0.28);
+    expect(LIGHTING.kitScale).toBe(0.22);
   });
 
   it('has the molten underglow values', () => {
-    expect(LIGHTING.under).toBe(0.6);
+    expect(LIGHTING.under).toBe(1.0);
     expect(LIGHTING.underColor).toBe(0xff6a2a);
     expect(LIGHTING.hemiGround).toBe(0x4a1e0c);
   });
