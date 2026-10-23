@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHARGE_END,
   FORGE_END,
+  FORGE_SETTLE,
   RISE_TIME,
   COLLAPSE_TIME,
   easeOutCubic,
@@ -75,18 +76,37 @@ describe('forgeTimeline', () => {
     expect(out.light).toBeCloseTo(1, 10);
   });
 
-  // The brief asks for flash/exposure/bloom < 0.06 at FORGE_END, but its own decay constants
-  // (0.3 / 0.35 / 0.5 s over the 0.45 s tail) leave ~0.23 / 0.14 / 0.39. The formulas are kept
-  // verbatim; this pins the decay shape and the settle level they actually reach.
-  it('has mostly settled by FORGE_END', () => {
+  // FORGE_END (0.9 s) is only when input unlocks; the punch terms keep decaying and are fully gone by FORGE_SETTLE.
+  it('has settled by FORGE_SETTLE', () => {
     const out = frame();
-    forgeTimeline(FORGE_END, FORGE_END - 1 / 60, false, out);
-    expect(out.flash).toBeLessThan(0.9 * 0.3);
-    expect(out.exposure).toBeLessThan(0.45 * 0.35);
-    expect(out.bloom).toBeLessThan(0.9 * 0.45);
-    expect(out.ca).toBeLessThan(0.06);
-    expect(out.fovKick).toBeLessThan(0.3);
-    expect(out.fovKick).toBeGreaterThanOrEqual(0);
+    forgeTimeline(FORGE_SETTLE, FORGE_SETTLE - 1 / 60, false, out);
+    expect(out.flash).toBeLessThan(0.01);
+    expect(out.exposure).toBeLessThan(0.01);
+    expect(out.ca).toBeLessThan(0.01);
+    expect(out.shake).toBeLessThan(0.01);
+    expect(out.light).toBeLessThan(0.01);
+    expect(out.bloom).toBeLessThan(0.02);
+    expect(out.fovKick).toBe(0);
+  });
+
+  it('does not flag impact on the first frame', () => {
+    const out = frame();
+    forgeTimeline(1 / 60, 0, false, out);
+    expect(out.impact).toBe(false);
+  });
+
+  it('flags impact exactly once on a coarse 0.3 s sweep', () => {
+    const out = frame();
+    let hits = 0;
+    let prev = 0;
+    for (let t = 0.3; t <= 1.2 + 1e-9; t += 0.3) {
+      forgeTimeline(t, prev, false, out);
+      if (out.impact) hits++;
+      prev = t;
+    }
+    expect(hits).toBe(1);
+    forgeTimeline(0.5, 0.2, false, out);
+    expect(out.impact).toBe(true);
   });
 
   it('never rises again once past the peak', () => {

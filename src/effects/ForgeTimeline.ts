@@ -3,6 +3,8 @@ export const CHARGE_END = 0.45;
 export const FORGE_END = 0.9;
 export const RISE_TIME = 0.45;
 export const COLLAPSE_TIME = 0.3;
+/** Time after the forge starts by which every post-impact term has decayed to (near) zero. */
+export const FORGE_SETTLE = 2.5;
 
 export interface ForgeFrame {
   charge: number;
@@ -48,7 +50,7 @@ export function forgeTimeline(t: number, prevT: number, reducedMotion: boolean, 
   out.exposure = pulse(s, 0.03, 0.35) * 0.45;
   out.bloom = pulse(s, 0.03, 0.5) * 0.9;
   out.ca = pulse(s, 0.02, 0.25) * 0.005;
-  out.light = pulse(s, 0.05, 0.8);
+  out.light = pulse(s, 0.05, 0.4);
   out.shake = hit ? 0.5 * Math.exp(-s / 0.18) : 0.25 * charge;
   out.fovKick = hit ? Math.max(0, 5 * (1 - easeOutBack(Math.min(1, s / 0.6)))) : 0;
   if (reducedMotion) {

@@ -333,7 +333,8 @@ export function maskEdgeCells(mask: Uint8Array, cols: number, rows: number): num
   return cells;
 }
 
-/** Packed world xyz of edge-cell centres, stride-sampled evenly (ends included) down to `maxPoints`. */
+/** Packed world xyz of edge-cell centres, stride-sampled evenly (ends included) down to `maxPoints`.
+ *  When `out` is large enough the result is a view aliasing `out`, so consume it before the next call. */
 export function edgePoints(def: SurfaceDef, mask: Uint8Array, maxPoints: number, out?: Float32Array): Float32Array {
   const edges = maskEdgeCells(mask, def.cols, def.rows);
   const n = Math.max(0, Math.min(edges.length, Math.floor(maxPoints)));

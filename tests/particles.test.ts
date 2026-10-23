@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage, Scene } from 'three';
-import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY, DUST_ALPHA, ParticleManager, luminance, kindIntensity, SPARK_TARGET_LUMA } from '../src/effects/ParticleManager';
+import { PARTICLE_VERT, PARTICLE_FRAG, KIND_INTENSITY, DUST_INTENSITY, DUST_ALPHA, ParticleManager, luminance, kindIntensity, SPARK_TARGET_LUMA, SHARD_TARGET_LUMA } from '../src/effects/ParticleManager';
 
 describe('particle shaders', () => {
   it('declares its own colour attribute instead of the built-in one', () => {
@@ -97,11 +97,12 @@ describe('luminance targeted intensity', () => {
     expect(luminance(0xff0000)).toBeCloseTo(0.2126, 4);
   });
 
-  it('scales sparks and shards so colour times intensity lands near the target luma', () => {
+  it('scales sparks (3.0) and shards (1.6) so colour times intensity lands near the target luma', () => {
     const hex = 0x5ce1ff;
     expect(SPARK_TARGET_LUMA).toBe(3.0);
     expect(kindIntensity(hex, 'spark') * luminance(hex)).toBeCloseTo(3, 5);
-    expect(kindIntensity(hex, 'shard') * luminance(hex)).toBeCloseTo(3, 5);
+    expect(SHARD_TARGET_LUMA).toBe(1.6);
+    expect(kindIntensity(0xff6a4a, 'shard') * luminance(0xff6a4a)).toBeCloseTo(1.6, 5);
   });
 
   it('clamps to [1, 12]', () => {

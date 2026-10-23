@@ -44,10 +44,11 @@ void main() {
 
 export type BurstKind = 'spark' | 'ember' | 'shard';
 
-/** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
+/** Fixed colour multiplier for embers; sparks and shards are luminance-targeted via `kindIntensity`. Dust stays below the bloom threshold. */
 export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
-/** Linear luma target that sparks and shards are scaled to, so dark hues still clear the bloom threshold. */
+/** Linear luma targets that sparks and shards are scaled to, so dark hues still clear the bloom threshold. */
 export const SPARK_TARGET_LUMA = 3.0;
+export const SHARD_TARGET_LUMA = 1.6;
 const lumaScratch = new Color();
 
 /** Linear Rec709 luma of `hex`. */
@@ -56,10 +57,11 @@ export function luminance(hex: number): number {
   return 0.2126 * lumaScratch.r + 0.7152 * lumaScratch.g + 0.0722 * lumaScratch.b;
 }
 
-/** Spark and shard colours are scaled toward SPARK_TARGET_LUMA (clamped to [1, 12]); embers keep their fixed value. */
+/** Spark and shard colours are scaled toward SPARK_/SHARD_TARGET_LUMA (clamped to [1, 12]); embers keep their fixed value. */
 export function kindIntensity(hex: number, kind: BurstKind): number {
   if (kind === 'ember') return KIND_INTENSITY.ember;
-  return Math.min(12, Math.max(1, SPARK_TARGET_LUMA / Math.max(0.05, luminance(hex))));
+  const target = kind === 'shard' ? SHARD_TARGET_LUMA : SPARK_TARGET_LUMA;
+  return Math.min(12, Math.max(1, target / Math.max(0.05, luminance(hex))));
 }
 
 export const DUST_INTENSITY = 0.6;
