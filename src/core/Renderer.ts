@@ -141,7 +141,8 @@ export class Renderer {
 
   /**
    * Add a transient hit on top of the tier base. It lasts until the next punch or presentation rebuild.
-   * The reference is kept and read every frame, so pass a fresh object or a frozen one; never mutate it afterwards.
+   * The reference is kept and read every frame, so a caller may mutate one object in place between frames.
+   * Never mutate ZERO_PUNCH, which is shared.
    */
   punch(p: Readonly<Punch>): void {
     this.punchState = p;

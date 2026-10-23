@@ -323,8 +323,13 @@ export class Ui {
   setFlash(opacity: number): void {
     const next = opacity < 0 ? 0 : opacity > 1 ? 1 : opacity;
     if (Math.abs(next - this.flashValue) <= 0.005 && (next !== 0 || this.flashValue === 0)) return;
+    const wasHidden = this.flashValue === 0;
     this.flashValue = next;
-    this.flashNode.style.opacity = String(next);
+    const written = 0.6 * next;
+    this.flashNode.style.opacity = String(written);
+    // Only touch visibility on a state change: a hidden full-screen blend layer costs the compositor nothing.
+    const hidden = written === 0;
+    if (hidden !== wasHidden) this.flashNode.style.visibility = hidden ? 'hidden' : 'visible';
   }
 
   caption(text: string): void {

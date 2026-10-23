@@ -132,7 +132,8 @@ export interface SolidStep {
 const step: SolidStep = { rise: 1, hot: 0, done: false };
 
 /**
- * Advances one surface's rise / idle / collapse state by `dt` (mutating `state.t`, and moving `rise` to
+ * Advances one surface's rise / idle / collapse state by `dt`. A rise may start at negative `t` (a delay): `rise` holds
+ * at 0 until `t` reaches 0. Mutates `state.t` (and moves `rise` to
  * `idle` once grown) and returns the uniform values for this frame. `done` is true only when a collapse
  * has finished and the mesh can be disposed. Allocation-free.
  */

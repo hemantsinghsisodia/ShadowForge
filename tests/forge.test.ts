@@ -85,7 +85,10 @@ describe('forgeTimeline', () => {
     expect(out.flash).toBe(0);
     forgeTimeline(CHARGE_END + 0.04, CHARGE_END + 0.03, false, out);
     expect(out.charge).toBe(0);
-    expect(out.flash).toBeCloseTo(0.9, 10);
+    expect(out.flash).toBeCloseTo(0.55, 10);
+    forgeTimeline(CHARGE_END + 0.03, CHARGE_END + 0.02, false, out);
+    expect(out.exposure).toBeCloseTo(0.25, 10);
+    expect(out.bloom).toBeCloseTo(0.6, 10);
     forgeTimeline(CHARGE_END + 0.05, CHARGE_END + 0.04, false, out);
     expect(out.light).toBeCloseTo(1, 10);
   });
@@ -150,6 +153,8 @@ describe('forgeTimeline', () => {
       expect(out.fovKick).toBe(0);
       expect(out.flash).toBeCloseTo(full.flash * 0.4, 10);
       expect(out.ca).toBeCloseTo(full.ca * 0.4, 10);
+      expect(out.exposure).toBeCloseTo(full.exposure * 0.4, 10);
+      expect(out.bloom).toBeCloseTo(full.bloom * 0.4, 10);
       prev = t;
     }
   });
@@ -222,6 +227,30 @@ describe('CameraRig.kick', () => {
 });
 
 describe('ForgeSurface charge', () => {
+  it('advances the scan phase on the CPU without strobing as charge ramps', () => {
+    const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
+    expect(forge.material.uniforms.scan.value).toBe(0);
+    forge.setTime(0);
+    let last = forge.material.uniforms.scan.value as number;
+    for (let i = 1; i <= 60; i++) {
+      forge.setCharge(i / 60);
+      forge.setTime(i / 60);
+      const now = forge.material.uniforms.scan.value as number;
+      expect(now - last).toBeGreaterThanOrEqual(0);
+      expect(now - last).toBeLessThanOrEqual((4 + 8) * 0.1 + 1e-6);
+      last = now;
+    }
+  });
+
+  it('runs the scan at 4 rad/s uncharged and clamps a long frame', () => {
+    const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
+    forge.setTime(0);
+    forge.setTime(0.05);
+    expect(forge.material.uniforms.scan.value).toBeCloseTo(0.2, 10);
+    forge.setTime(10);
+    expect(forge.material.uniforms.scan.value).toBeCloseTo(0.2 + 0.4, 10);
+  });
+
   it('starts uncharged and writes the charge uniform', () => {
     const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
     expect(forge.material.uniforms.charge.value).toBe(0);

@@ -8,6 +8,7 @@ import { QualityMonitor } from '../core/QualityMonitor';
 import { Renderer } from '../core/Renderer';
 import {
   FORGE_END,
+  RISE_DELAY,
   collapseFlash,
   fillPunch,
   mixPunch,
@@ -39,8 +40,8 @@ import { LevelWorld } from '../world/LevelWorld';
 const raycaster = new Raycaster();
 const ndc = new Vector2();
 
-/** The collapse flash is a 0.3 s pulse; the timer runs a little past it. */
-const COLLAPSE_FLASH_END = 0.4;
+/** The collapse flash is a 0.3 s pulse with a 0.12 s decay tail; the timer runs past it so the end cannot pop. */
+const COLLAPSE_FLASH_END = 0.6;
 /** Edge sparks per forge: at most this many points, and never more than a third of the particle budget. */
 const EDGE_SPARK_CAP = 120;
 
@@ -85,6 +86,9 @@ export class Game {
   private readonly punchOut: Punch = { flash: 0, exposure: 0, bloom: 0, ca: 0 };
   private punchLive = false;
   private collapseT = COLLAPSE_FLASH_END;
+  /** Seconds until the delayed edge-spark burst fires; 0 when none is pending. */
+  private sparkPending = 0;
+  private sparkSurface = '';
   private reducedMotion = prefersReducedMotion();
   private readonly edgeScratch = new Float32Array(EDGE_SPARK_CAP * 3);
   private readonly sparkDir: [number, number, number] = [0, 1, 0];
@@ -344,6 +348,13 @@ export class Game {
     if (!this.fxLive()) return;
     const fx = this.forgeFx;
     if (this.collapseT < COLLAPSE_FLASH_END) this.collapseT += dt;
+    if (this.sparkPending > 0) {
+      this.sparkPending -= dt;
+      if (this.sparkPending <= 0) {
+        this.sparkPending = 0;
+        if (this.shadows) this.edgeSparks(this.shadows, this.sparkSurface);
+      }
+    }
     if (fx.active) {
       const frame = this.forgeFrame;
       const settled = stepForgeFx(fx, dt, this.reducedMotion, frame);
@@ -395,7 +406,9 @@ export class Game {
     this.world.sync(shadows);
     this.world.pulseForge(id);
     this.haptics.pulse(45);
-    this.edgeSparks(shadows, id);
+    // The obsidian starts rising RISE_DELAY later (under the flash); the sparks follow it.
+    this.sparkPending = RISE_DELAY;
+    this.sparkSurface = id;
     return true;
   }
 
@@ -416,7 +429,7 @@ export class Game {
   }
 
   private fxLive(): boolean {
-    return this.forgeFx.active || this.collapseT < COLLAPSE_FLASH_END || this.punchLive;
+    return this.forgeFx.active || this.collapseT < COLLAPSE_FLASH_END || this.punchLive || this.sparkPending > 0;
   }
 
   /** Lets go of the camera, the plate and the forge light. Leaves the post-processing punch alone. */
@@ -431,6 +444,7 @@ export class Game {
   private resetForgeEffects(): void {
     this.forgeFx.active = false;
     this.collapseT = COLLAPSE_FLASH_END;
+    this.sparkPending = 0;
     this.punchLive = false;
     this.renderer.punch(ZERO_PUNCH);
     this.clearForgeVisuals();

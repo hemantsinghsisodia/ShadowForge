@@ -28,7 +28,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
-import { collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
+import { RISE_DELAY, collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
 import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
@@ -112,6 +112,9 @@ export class LevelWorld {
   private profile: QualityProfile | null = null;
   private readonly solidViews = new Map<string, SolidView>();
   private solidDt = 0;
+  /** Tiny obsidian mesh drawn for one frame after load so the instanced program compiles before the first forge. */
+  private prewarm: InstancedMesh | null = null;
+  private prewarmFrames = 0;
   private readonly risePending = new Set<string>();
   private readonly collapsePending = new Set<string>();
   private platformViews: Mesh[][] = [];
@@ -172,7 +175,7 @@ export class LevelWorld {
 
   /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */
   private syncForgeLight(): void {
-    const want = this.config !== null && this.profile !== null && this.profile.cavern !== 'low';
+    const want = this.config !== null && this.profile !== null && this.profile.forgeLight;
     if (want && !this.forgeLight) {
       this.forgeLight = new PointLight(this.accent, 0, 7, 2);
       this.forgeLight.castShadow = false;
@@ -369,6 +372,38 @@ export class LevelWorld {
     column.position.set(config.exit.position[0], 1.8, config.exit.position[2]);
     this.column = column;
     this.root.add(column);
+    this.mountPrewarm(config);
+  }
+
+  /**
+   * Medium / High only: keeps one tiny obsidian instance (the same material and shadow flags as a real one) in the
+   * scene for a couple of frames, so the instanced program compiles during load instead of hitching the first forge.
+   * `renderer.compile` is not used: it needs a camera and renders to the canvas, while the game draws into the
+   * composer's target, so the program it built would not be the one the first forge needs.
+   */
+  private mountPrewarm(config: LevelConfig): void {
+    this.dropPrewarm();
+    if (!this.profile || this.profile.cavern === 'low') return;
+    const p = config.platforms[0]?.position ?? [0, 0, 0];
+    const box = { minX: p[0], minY: p[1], minZ: p[2], maxX: p[0], maxY: p[1], maxZ: p[2], climbable: false, nx: 0, ny: 0, nz: 0 };
+    const material = createObsidianMaterial(1, this.accent);
+    material.uniforms.rise.value = 0;
+    const mesh = buildObsidianMesh([box], material);
+    mesh.scale.setScalar(0.0001);
+    mesh.frustumCulled = false;
+    this.root.add(mesh);
+    this.prewarm = mesh;
+    this.prewarmFrames = 2;
+  }
+
+  private dropPrewarm(): void {
+    const mesh = this.prewarm;
+    if (!mesh) return;
+    this.prewarm = null;
+    this.root.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.dispose();
+    (mesh.material as ShaderMaterial).dispose();
   }
 
   sync(shadows: ShadowManager): void {
@@ -482,6 +517,7 @@ export class LevelWorld {
     for (const forge of this.forges) forge.setTime(this.time);
     this.solidDt = dt;
     this.solidViews.forEach(this.tickSolid);
+    if (this.prewarm && this.root.visible && --this.prewarmFrames <= 0) this.dropPrewarm();
   }
 
   /** Bound once so the per-frame `forEach` allocates nothing. */
@@ -523,7 +559,7 @@ export class LevelWorld {
       material.uniforms.rise.value = rising ? 0 : 1;
       const mesh = buildObsidianMesh(boxes, material);
       this.solidGroup.add(mesh);
-      this.solidViews.set(id, { key, mesh, material, mode: rising ? 'rise' : 'idle', t: 0 });
+      this.solidViews.set(id, { key, mesh, material, mode: rising ? 'rise' : 'idle', t: rising ? -RISE_DELAY : 0 });
     }
     this.risePending.clear();
     this.collapsePending.clear();
@@ -539,6 +575,7 @@ export class LevelWorld {
 
   private clearLevel(): void {
     this.hideGuides();
+    this.dropPrewarm();
     for (const [id, view] of [...this.solidViews]) this.removeSolid(id, view);
     this.risePending.clear();
     this.collapsePending.clear();

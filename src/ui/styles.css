@@ -231,6 +231,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: #fff4e0;
   mix-blend-mode: screen;
   opacity: 0;
+  visibility: hidden;
 }
 
 #rotate {

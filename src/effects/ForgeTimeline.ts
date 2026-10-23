@@ -5,6 +5,8 @@ export const CHARGE_END = 0.45;
 export const FORGE_END = 0.9;
 export const RISE_TIME = 0.45;
 export const COLLAPSE_TIME = 0.3;
+/** The obsidian waits this long after the impact so its first growth is not lost under the flash. */
+export const RISE_DELAY = 0.12;
 /** Time after the forge starts by which every post-impact term has decayed to (near) zero. */
 export const FORGE_SETTLE = 2.5;
 
@@ -48,9 +50,9 @@ export function forgeTimeline(t: number, prevT: number, reducedMotion: boolean, 
   const hit = s >= 0;
   out.charge = charge;
   out.impact = prevT < CHARGE_END && t >= CHARGE_END;
-  out.flash = pulse(s, 0.04, 0.3) * 0.9;
-  out.exposure = pulse(s, 0.03, 0.35) * 0.45;
-  out.bloom = pulse(s, 0.03, 0.5) * 0.9;
+  out.flash = pulse(s, 0.04, 0.18) * 0.55;
+  out.exposure = pulse(s, 0.03, 0.35) * 0.25;
+  out.bloom = pulse(s, 0.03, 0.5) * 0.6;
   out.ca = pulse(s, 0.02, 0.25) * 0.005;
   out.light = pulse(s, 0.05, 0.4);
   out.shake = hit ? 0.5 * Math.exp(-s / 0.18) : 0.25 * charge;
@@ -59,6 +61,8 @@ export function forgeTimeline(t: number, prevT: number, reducedMotion: boolean, 
     out.shake = 0;
     out.fovKick = 0;
     out.flash *= 0.4;
+    out.exposure *= 0.4;
+    out.bloom *= 0.4;
     out.ca *= 0.4;
   }
   return out;

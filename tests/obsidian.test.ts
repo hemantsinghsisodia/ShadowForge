@@ -148,6 +148,20 @@ describe('stepSolid', () => {
     expect(stepSolid(state, 0.1)).toMatchObject({ rise: 1, hot: 0, done: false });
   });
 
+  it('holds rise at 0 while t is negative (delayed rise), then grows from t = 0', () => {
+    const state: SolidState = { mode: 'rise', t: -0.12 };
+    let out = stepSolid(state, 0.05);
+    expect(out.rise).toBe(0);
+    expect(state.mode).toBe('rise');
+    out = stepSolid(state, 0.05);
+    expect(out.rise).toBe(0);
+    out = stepSolid(state, 0.05);
+    expect(state.t).toBeCloseTo(0.03, 10);
+    expect(out.rise).toBeCloseTo(riseProgress(0.03), 10);
+    expect(out.rise).toBeGreaterThan(0);
+    expect(state.mode).toBe('rise');
+  });
+
   it('collapses to 0 hot, and is done by COLLAPSE_TIME', () => {
     const state: SolidState = { mode: 'collapse', t: 0 };
     let out = stepSolid(state, 0.05);
