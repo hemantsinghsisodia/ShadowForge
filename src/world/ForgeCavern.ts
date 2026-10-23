@@ -45,10 +45,8 @@ const UP = new Vector3(0, 1, 0);
 const WALL_HEIGHT = 40;
 const WALL_CENTRE_Y = 6;
 const WALL_DISPLACE = 10;
-/** Offset of the near wall pair from the corridor edge; High adds a darker pair behind it. */
+/** Offset of the wall pair from the corridor edge. */
 const WALL_NEAR = 28;
-const WALL_FAR = 40;
-const WALL_FAR_DARK = 0.6;
 
 /** Deterministic lattice value in [0, 1) for an integer cell, hashed through mulberry32. */
 function lattice(ix: number, iy: number, seed: number): number {
@@ -304,12 +302,19 @@ export class ForgeCavern {
   private syncStructures(): void {
     const key = [this.detail, JSON.stringify(this.bounds), JSON.stringify(this.slabs.map((s) => [s.position, s.size])), this.seed, this.kit ? 1 : 0].join('|');
     if (key === this.structureKey) return;
-    this.structureKey = key;
     for (const mesh of this.structures) {
       this.group.remove(mesh);
       mesh.geometry.dispose();
     }
-    this.structures = this.kit ? bakeByMaterial(placeStructures(this.bounds, this.slabs, this.detail, this.seed), this.kit) : [];
+    this.structures = [];
+    try {
+      this.structures = this.kit ? bakeByMaterial(placeStructures(this.bounds, this.slabs, this.detail, this.seed), this.kit) : [];
+    } catch (error) {
+      // Leave the key unset so the next sync retries.
+      console.error('ForgeCavern: structure bake failed; continuing without structures', error);
+      return;
+    }
+    this.structureKey = key;
     for (const mesh of this.structures) {
       mesh.visible = CAVERN.structures;
       this.group.add(mesh);
@@ -331,29 +336,25 @@ export class ForgeCavern {
     const { midZ, halfDepth } = corridor(this.bounds);
     const length = maxX - minX + 120;
     const [segX, segY] = this.detail === 'low' ? [48, 8] : [96, 16];
-    const rows: Array<[number, number]> = [[WALL_NEAR, 1]];
-    if (this.detail === 'high') rows.push([WALL_FAR, WALL_FAR_DARK]);
-    rows.forEach(([offset, dark], row) => {
-      for (const side of [1, -1]) {
-        const mesh = new Mesh(
-          rockCard(length, segX, segY, this.seed * 7 + row * 2 + (side > 0 ? 0 : 1)),
-          new ShaderMaterial({
-            uniforms: { ...this.uniforms, uDark: { value: dark } },
-            vertexShader: ROCK_VERT,
-            fragmentShader: ROCK_FRAG,
-            fog: false,
-          }),
-        );
-        mesh.name = 'walls';
-        mesh.position.set((minX + maxX) / 2, WALL_CENTRE_Y, midZ + side * (halfDepth + offset));
-        mesh.rotation.y = side > 0 ? Math.PI : 0;
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-        mesh.visible = CAVERN.walls;
-        this.walls.push(mesh);
-        this.group.add(mesh);
-      }
-    });
+    for (const side of [1, -1]) {
+      const mesh = new Mesh(
+        rockCard(length, segX, segY, this.seed * 7 + (side > 0 ? 0 : 1)),
+        new ShaderMaterial({
+          uniforms: this.uniforms,
+          vertexShader: ROCK_VERT,
+          fragmentShader: ROCK_FRAG,
+          fog: false,
+        }),
+      );
+      mesh.name = 'walls';
+      mesh.position.set((minX + maxX) / 2, WALL_CENTRE_Y, midZ + side * (halfDepth + WALL_NEAR));
+      mesh.rotation.y = side > 0 ? Math.PI : 0;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.visible = CAVERN.walls;
+      this.walls.push(mesh);
+      this.group.add(mesh);
+    }
   }
 
   private domeGeometry(detail: CavernDetail): BufferGeometry {

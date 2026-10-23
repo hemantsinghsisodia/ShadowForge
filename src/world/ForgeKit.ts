@@ -27,11 +27,11 @@ export function forgeRetint(material: MeshStandardMaterial): void {
   switch (material.name.replace(/^SHF_MAT_/, '')) {
     case 'CyanEmission':
       material.emissive.setHex(FORGE.glow);
-      material.emissiveIntensity = 1.6; // above the 1.2 bloom threshold
+      material.emissiveIntensity = 1.6; // deliberately below the luma bloom knee (1.2 to 2.0): 60+ strips under the slabs would haze the floor
       break;
     case 'WhiteEmission':
       material.emissive.setHex(0xffc890);
-      material.emissiveIntensity = 2.0;
+      material.emissiveIntensity = 3.2; // lamp heads: past the bloom knee so they glow
       break;
   }
 }

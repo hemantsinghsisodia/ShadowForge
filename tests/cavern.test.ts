@@ -326,6 +326,25 @@ describe('ForgeCavern structures', () => {
     expect(structureMeshes(cavern)).toHaveLength(0);
   });
 
+  it('survives a failing bake: logs, builds nothing, and retries on the next sync', () => {
+    const cavern = ready();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const broken: FakeKit = {
+        prototype() {
+          throw new Error('bad kit');
+        },
+      };
+      expect(() => cavern.setKit(broken as ForgeKit)).not.toThrow();
+      expect(error).toHaveBeenCalled();
+      expect(structureMeshes(cavern)).toHaveLength(0);
+      cavern.setKit(fakeKit() as ForgeKit);
+      expect(structureMeshes(cavern).length).toBeGreaterThan(0);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('hides the meshes with tune({ structures: false }) and keeps that across rebuilds', () => {
     const cavern = ready();
     cavern.setKit(fakeKit() as ForgeKit);
@@ -415,17 +434,16 @@ describe('ForgeCavern walls', () => {
     return cavern;
   };
 
-  it('builds 2 cards on low and medium and 4 on high', () => {
+  it('builds 2 cards on every tier', () => {
     expect(wallMeshes(ready('low'))).toHaveLength(2);
     expect(wallMeshes(ready('medium'))).toHaveLength(2);
-    expect(wallMeshes(ready('high'))).toHaveLength(4);
+    expect(wallMeshes(ready('high'))).toHaveLength(2);
   });
 
   it('uses 48x8 segments on low and 96x16 otherwise', () => {
     expect(verts(ready('low'))).toBe(2 * 49 * 9);
     expect(verts(ready('medium'))).toBe(2 * 97 * 17);
-    expect(verts(ready('high'))).toBe(4 * 97 * 17);
-    console.log(`wall verts: low ${2 * 49 * 9}, medium ${2 * 97 * 17}, high ${4 * 97 * 17}`);
+    expect(verts(ready('high'))).toBe(2 * 97 * 17);
   });
 
   it('places the cards either side of the corridor, facing it', () => {
@@ -459,20 +477,6 @@ describe('ForgeCavern walls', () => {
     }
   });
 
-  it('adds a darker outer pair on high', () => {
-    const cavern = ready('high');
-    const { midZ, halfDepth } = corridor(BOUNDS);
-    const outer = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) > halfDepth + 34);
-    const inner = wallMeshes(cavern).filter((m) => Math.abs(m.position.z - midZ) < halfDepth + 34);
-    expect(outer).toHaveLength(2);
-    expect(inner).toHaveLength(2);
-    for (const m of outer) {
-      expect(Math.abs(m.position.z - midZ)).toBeCloseTo(halfDepth + 40);
-      expect((m.material as ShaderMaterial).uniforms.uDark.value).toBeCloseTo(0.6);
-    }
-    for (const m of inner) expect((m.material as ShaderMaterial).uniforms.uDark.value).toBe(1);
-  });
-
   it('is unlit, shadow-free and fog-free, sharing the cavern uniforms', () => {
     const cavern = ready('medium');
     const abyssMaterial = abyss(cavern).material as ShaderMaterial;
@@ -498,7 +502,7 @@ describe('ForgeCavern walls', () => {
     spies.forEach((spy) => expect(spy).toHaveBeenCalled());
     materialSpies.forEach((spy) => expect(spy).toHaveBeenCalled());
     before.forEach((m) => expect(m.parent).toBeNull());
-    expect(wallMeshes(cavern)).toHaveLength(4);
+    expect(wallMeshes(cavern)).toHaveLength(2);
     cavern.setDetail('low', 0);
     expect(wallMeshes(cavern)).toHaveLength(2);
   });

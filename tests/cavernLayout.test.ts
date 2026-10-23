@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LEVELS } from '../src/levels';
 import type { PlatformConfig } from '../src/levels/LevelData';
-import { CAMERA_BAND, CAMERA_REACH, corridor, exposedRims, levelBounds, placeStructures, type Placement } from '../src/world/CavernLayout';
+import { CAMERA_DISTANCE } from '../src/player/CameraRig';
+import { BEAM_Y, CAMERA_BAND, CAMERA_REACH, corridor, exposedRims, levelBounds, placeStructures, towerSites, type Placement } from '../src/world/CavernLayout';
 import { ABYSS_Y } from '../src/world/ForgePalette';
 
 const SEEDS = [0, 1, 7, 12345];
@@ -19,8 +20,8 @@ const total = (rims: ReturnType<typeof exposedRims>) => rims.reduce((sum, r) => 
 
 describe('CavernLayout', () => {
   it('keeps the camera band wider than the camera reach', () => {
-    expect(CAMERA_REACH).toBe(6.2);
-    expect(CAMERA_BAND).toBeGreaterThan(CAMERA_REACH);
+    expect(CAMERA_REACH).toBe(CAMERA_DISTANCE);
+    expect(CAMERA_BAND).toBeGreaterThan(CAMERA_DISTANCE);
   });
 
   it('emits a single cross beam at the midpoint of a slab narrower than 0.3 m between its beam lines', () => {
@@ -128,6 +129,22 @@ describe('CavernLayout', () => {
         expect(medium.length).toBeLessThanOrEqual(high.length * 0.6);
       });
 
+      const mediumTowers = () => placeStructures(bounds, slabs, 'medium', 9).filter((p) => p.role === 'tower' && p.piece === 'SHF_Pillar_A');
+
+      it('medium keeps at least 2 towers per side when the level spans more than 30 m in X', () => {
+        if (bounds.maxX - bounds.minX <= 30) return;
+        const towers = mediumTowers();
+        expect(towers.filter((p) => p.position[2] > midZ).length).toBeGreaterThanOrEqual(2);
+        expect(towers.filter((p) => p.position[2] < midZ).length).toBeGreaterThanOrEqual(2);
+      });
+
+      it('medium towers cover both halves of the level X range', () => {
+        const midX = (bounds.minX + bounds.maxX) / 2;
+        const xs = mediumTowers().map((p) => p.position[0]);
+        expect(xs.some((x) => x < midX)).toBe(true);
+        expect(xs.some((x) => x > midX)).toBe(true);
+      });
+
       it('low places nothing', () => {
         expect(placeStructures(bounds, slabs, 'low', 9)).toEqual([]);
       });
@@ -224,5 +241,38 @@ describe('CavernLayout', () => {
 
   it('exposedRims ignores slabs that are not floor-like', () => {
     expect(exposedRims([slab(0, 0, 4, 4, 1, 2)])).toEqual([]);
+  });
+});
+
+describe('towerSites', () => {
+  const bounds = { minX: -20, maxX: 20, minZ: -4, maxZ: 6 };
+  const { midZ, halfDepth } = corridor(bounds);
+
+  it('is deterministic and empty on low', () => {
+    expect(towerSites(bounds, 'high')).toEqual(towerSites(bounds, 'high'));
+    expect(towerSites(bounds, 'medium')).toEqual(towerSites(bounds, 'medium'));
+    expect(towerSites(bounds, 'low')).toEqual([]);
+  });
+
+  it('puts every site halfDepth + 9 from the corridor centre, on the side it names', () => {
+    for (const detail of ['medium', 'high'] as const) {
+      const sites = towerSites(bounds, detail);
+      expect(sites.length).toBeGreaterThan(0);
+      for (const s of sites) {
+        expect(Math.abs(s.z - midZ)).toBeCloseTo(halfDepth + 9, 9);
+        expect(Math.sign(s.z - midZ)).toBe(s.side);
+      }
+    }
+  });
+
+  it('matches the tower pillars placeStructures emits', () => {
+    for (const detail of ['medium', 'high'] as const) {
+      const pillars = placeStructures(bounds, [], detail, 1).filter((p) => p.role === 'tower' && p.piece === 'SHF_Pillar_A');
+      expect(pillars.map((p) => [p.position[0], p.position[2]])).toEqual(towerSites(bounds, detail).map((s) => [s.x, s.z]));
+    }
+  });
+
+  it('exports the link beam height', () => {
+    expect(BEAM_Y).toBe(0.6);
   });
 });

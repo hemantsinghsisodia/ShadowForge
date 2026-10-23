@@ -1,4 +1,5 @@
 import { mulberry32 } from '../core/random';
+import { CAMERA_DISTANCE } from '../player/CameraConstants';
 import type { PlatformConfig } from '../levels/LevelData';
 import { FORGE_KIT, type ForgeKitName } from './ForgeKit';
 import type { CavernBounds, CavernDetail } from './ForgeCavern';
@@ -56,7 +57,7 @@ export interface Rim {
 }
 
 /** Camera distance in player/CameraRig. */
-export const CAMERA_REACH = 6.2;
+export const CAMERA_REACH = CAMERA_DISTANCE;
 /** Half-width of the keep-clear band either side of the corridor edge. Must exceed CAMERA_REACH, or pieces can sit between the camera and the player. */
 export const CAMERA_BAND = 7;
 
@@ -75,7 +76,8 @@ const TOWER_SPACING = 12;
 const TOWER_OVERSHOOT = 10;
 const TOWER_OFFSET = 9;
 const TOWER_TOP = 1;
-const BEAM_Y = 0.6;
+/** Height of the beams that link neighbouring towers. */
+export const BEAM_Y = 0.6;
 const TRAY_Y = 0.3;
 const RIM_EPS = 0.05;
 const MIN_SEGMENT = 0.01;
@@ -177,20 +179,37 @@ function supports(slab: PlatformConfig, others: PlatformConfig[], rand: () => nu
   return out;
 }
 
-function towers(bounds: CavernBounds, detail: CavernDetail, rand: () => number): Placement[] {
+export interface TowerSite {
+  x: number;
+  z: number;
+  /** +1 on the +Z side of the corridor, -1 on the -Z side. */
+  side: 1 | -1;
+}
+
+/**
+ * Where the lamp towers stand: alternating sides along X, TOWER_SPACING apart, TOWER_OFFSET beyond the corridor edge.
+ * Empty on low. Medium drops every third site (index % 3 === 1), which keeps both sides and the whole X range covered.
+ */
+export function towerSites(bounds: CavernBounds, detail: CavernDetail): TowerSite[] {
+  if (detail === 'low') return [];
   const { midZ, halfDepth } = corridor(bounds);
-  const scaleY = (TOWER_TOP - ABYSS_Y) / PILLAR_H;
   const firstX = bounds.minX - TOWER_OVERSHOOT;
   const lastX = bounds.maxX + TOWER_OVERSHOOT;
+  const out: TowerSite[] = [];
+  for (let i = 0; firstX + i * TOWER_SPACING <= lastX; i++) {
+    if (detail === 'medium' && i % 3 === 1) continue;
+    const side = i % 2 === 0 ? 1 : -1;
+    out.push({ x: firstX + i * TOWER_SPACING, z: midZ + side * (halfDepth + TOWER_OFFSET), side });
+  }
+  return out;
+}
+
+function towers(bounds: CavernBounds, detail: CavernDetail, rand: () => number): Placement[] {
+  const scaleY = (TOWER_TOP - ABYSS_Y) / PILLAR_H;
   const bySide: [number, number][][] = [[], []];
   const out: Placement[] = [];
-  for (let i = 0; firstX + i * TOWER_SPACING <= lastX; i++) {
-    const side = i % 2;
-    // Medium keeps every other tower on each side.
-    if (detail === 'medium' && Math.floor(i / 2) % 2 === 1) continue;
-    const x = firstX + i * TOWER_SPACING;
-    const z = midZ + (side === 0 ? 1 : -1) * (halfDepth + TOWER_OFFSET);
-    bySide[side].push([x, z]);
+  for (const { x, z, side } of towerSites(bounds, detail)) {
+    bySide[side === 1 ? 0 : 1].push([x, z]);
     out.push({
       piece: FORGE_KIT.pillar,
       position: [x, ABYSS_Y, z],

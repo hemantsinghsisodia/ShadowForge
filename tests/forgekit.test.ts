@@ -13,17 +13,17 @@ describe('forgeRetint', () => {
     expect(m.emissive.getHex()).toBe(FORGE.glow);
   });
 
-  it('boosts the cyan emission to 1.6 so it blooms past the 1.2 threshold', () => {
+  it('keeps the cyan strips at 1.6, deliberately below the bloom knee', () => {
     const m = named('SHF_MAT_CyanEmission');
     forgeRetint(m);
     expect(m.emissiveIntensity).toBe(1.6);
   });
 
-  it('turns the white emission warm at intensity 2', () => {
+  it('turns the white emission warm at 3.2 so the lamp heads bloom', () => {
     const m = named('SHF_MAT_WhiteEmission');
     forgeRetint(m);
     expect(m.emissive.getHex()).toBe(0xffc890);
-    expect(m.emissiveIntensity).toBe(2.0);
+    expect(m.emissiveIntensity).toBe(3.2);
   });
 
   it('also matches the unprefixed material names', () => {

@@ -2,6 +2,9 @@ import { PerspectiveCamera, Vector3 } from 'three';
 import type { CharacterBody } from '../physics/CharacterBody';
 import { raycastBoxes } from '../shadows/math';
 import type { SolidBox } from '../shadows/types';
+import { CAMERA_DISTANCE } from './CameraConstants';
+
+export { CAMERA_DISTANCE };
 
 const target = new Vector3();
 const desired = new Vector3();
@@ -11,7 +14,7 @@ export class CameraRig {
   readonly camera = new PerspectiveCamera(58, 1, 0.08, 180);
   yaw = 0;
   pitch = 0.42;
-  distance = 6.2;
+  distance = CAMERA_DISTANCE;
   sensitivity = 1;
   invertY = false;
   shake = 0;
