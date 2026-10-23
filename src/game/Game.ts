@@ -139,6 +139,8 @@ export class Game {
             this.camera.camera,
           );
         },
+        bloom: (strength: number, radius: number, threshold: number) =>
+          this.renderer.tuneBloom(strength, radius, threshold),
       };
     }
     if (!localStorage.getItem('shadowforge-tutorial')) {

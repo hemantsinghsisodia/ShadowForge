@@ -11,6 +11,7 @@ interface ShadowforgeDebug {
   boxes: () => unknown;
   fps: () => number;
   post: (mode: 'off' | 'bloom' | 'grade' | 'full') => void;
+  bloom: (strength: number, radius: number, threshold: number) => void;
 }
 
 declare global {
