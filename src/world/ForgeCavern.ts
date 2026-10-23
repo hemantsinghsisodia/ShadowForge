@@ -19,7 +19,8 @@ import { mulberry32 } from '../core/random';
 import { Embers, seedEmbers } from '../effects/Embers';
 import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT, ROCK_FRAG, ROCK_VERT } from './CavernShaders';
 import type { PlatformConfig } from '../levels/LevelData';
-import { corridor, placeStructures, type Placement } from './CavernLayout';
+import { chainSites, corridor, placeStructures, railLine, type Placement } from './CavernLayout';
+import { CavernMotion } from './CavernMotion';
 import type { ForgeKit } from './ForgeKit';
 import { ABYSS_Y, CAVERN, FORGE, moltenPulse } from './ForgePalette';
 
@@ -165,13 +166,15 @@ export class ForgeCavern {
   private structureKey: string | null = null;
   private walls: Mesh[] = [];
   private wallKey: string | null = null;
+  private readonly motion = new CavernMotion();
+  private motionKey: string | null = null;
   /** The objects each boolean layer switch controls. A new layer adds one line; tune and every rebuild apply it. */
   private readonly visibility: Record<BooleanKey, () => Object3D[]> = {
     embers: () => (this.embers ? [this.embers.points] : []),
     structures: () => this.structures,
     walls: () => this.walls,
-    chains: () => [],
-    gantry: () => [],
+    chains: () => this.motion.chainObjects,
+    gantry: () => this.motion.gantryObjects,
     sparks: () => [],
   };
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
@@ -202,6 +205,7 @@ export class ForgeCavern {
     this.abyssMesh.name = 'abyss';
     this.abyssMesh.renderOrder = 1;
     this.group.add(this.abyssMesh);
+    this.group.add(this.motion.group);
     this.mount(this.bounds);
   }
 
@@ -219,6 +223,7 @@ export class ForgeCavern {
       this.abyssMesh.material = this.abyssMaterial(detail);
     }
     this.syncStructures();
+    this.syncMotion();
     this.syncWalls();
   }
 
@@ -226,6 +231,7 @@ export class ForgeCavern {
   setKit(kit: ForgeKit | null): void {
     this.kit = kit;
     this.syncStructures();
+    this.syncMotion();
   }
 
   /** Sizes and centres the abyss for a level, or for the menu. A repeat call with equal arguments does nothing. */
@@ -245,6 +251,7 @@ export class ForgeCavern {
     this.abyssMesh.position.set((minX + maxX) / 2, ABYSS_Y, (minZ + maxZ) / 2);
     this.syncEmbers();
     this.syncStructures();
+    this.syncMotion();
     this.syncWalls();
   }
 
@@ -267,6 +274,7 @@ export class ForgeCavern {
     this.embers?.setTime(time);
     this.uniforms.uAbyssTime.value = time % ABYSS_PERIOD;
     this.uniforms.uPulse.value = moltenPulse(time);
+    this.motion.update(time);
   }
 
   /** Live tuning hook (__SF.cavern): merges finite numbers and booleans into CAVERN and pushes the uniforms. */
@@ -330,6 +338,21 @@ export class ForgeCavern {
     }
     this.structureKey = key;
     for (const mesh of this.structures) this.group.add(mesh);
+    this.applyVisibility();
+  }
+
+  /** Rebuilds the chains and gantry only when the detail, bounds, seed or kit presence have changed (slabs do not move them). */
+  private syncMotion(): void {
+    const key = [this.detail, JSON.stringify(this.bounds), this.seed, this.kit ? 1 : 0].join('|');
+    if (key === this.motionKey) return;
+    try {
+      this.motion.build(railLine(this.bounds, this.detail), chainSites(this.bounds, this.detail, this.seed), this.kit);
+    } catch (error) {
+      // Leave the key unset so the next sync retries.
+      console.error('ForgeCavern: chain build failed; continuing without chains', error);
+      return;
+    }
+    this.motionKey = key;
     this.applyVisibility();
   }
 
