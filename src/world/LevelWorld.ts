@@ -36,10 +36,10 @@ import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
-import { cavernFog, levelAtmosphere } from './ForgePalette';
+import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
+import { levelAtmosphere } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
-import { SpaceBackdrop } from './SpaceBackdrop';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
@@ -94,13 +94,13 @@ export class LevelWorld {
   private platformViews: Mesh[][] = [];
   private loadToken = 0;
   private dressingKit = false;
-  readonly backdrop = new SpaceBackdrop();
+  readonly cavern = new ForgeCavern();
   time = 0;
 
   constructor(private scene: Scene) {
     this.scene.add(this.root);
     this.scene.add(this.menu);
-    this.scene.add(this.backdrop.group);
+    this.scene.add(this.cavern.group, this.cavern.dome);
     this.root.add(this.guides, this.solidGroup);
     this.buildMenu();
   }
@@ -108,6 +108,7 @@ export class LevelWorld {
   showMenu(on: boolean): void {
     this.menu.visible = on;
     this.root.visible = !on;
+    this.cavern.mount(on ? MENU_BOUNDS : (this.bounds ?? MENU_BOUNDS));
   }
 
   bindRenderer(renderer: WebGLRenderer): void {
@@ -134,7 +135,7 @@ export class LevelWorld {
       lab.applyEnv(null);
     }
     if (detailChanged && this.bounds) this.mountDressing();
-    this.backdrop.setDetail(profile.cavern);
+    this.cavern.setDetail(profile.cavern, profile.embers);
   }
 
   /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
@@ -181,7 +182,6 @@ export class LevelWorld {
     const atmosphere = levelAtmosphere(config.id);
     this.scene.background = new Color(atmosphere.background);
     this.scene.fog = new FogExp2(atmosphere.fog, atmosphere.density);
-    this.backdrop.setTint(this.accent, cavernFog());
     this.hemi = new HemisphereLight(0xb7c6dc, 0x243044, hemiIntensity(this.profile?.envMap ?? true));
     this.root.add(this.hemi);
     this.sun = new DirectionalLight(LIGHTING.sunColor, LIGHTING.sun);
@@ -214,6 +214,7 @@ export class LevelWorld {
       maxZ = Math.max(maxZ, platform.position[2] + platform.size[2] / 2);
     }
     this.bounds = { minX, maxX, minZ, maxZ };
+    this.cavern.mount(this.bounds);
     this.mountDressing();
     const token = ++this.loadToken;
     const kit = envKit();
@@ -358,7 +359,7 @@ export class LevelWorld {
 
   update(dt: number, px = 0, pz = 0): void {
     this.time += dt;
-    this.backdrop.update(dt);
+    this.cavern.update(this.time);
     if (this.exit) this.exit.rotation.z = this.time * 0.6;
     if (this.column) {
       const mat = this.column.material as MeshBasicMaterial;
@@ -607,7 +608,7 @@ export class LevelWorld {
     if (!this.bounds || !Number.isFinite(this.bounds.minX)) return;
     const kit = envKit();
     this.dressingKit = kit !== null;
-    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent, kit, this.config);
+    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, kit, this.config);
     this.root.add(this.dressing);
     this.dressing.traverse((child) => {
       if (child.userData.pillar) this.pillars.push(child as Mesh);

@@ -17,6 +17,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Vector2 } from 'three';
 import { applyPunch, gradeShader, ZERO_PUNCH, type Punch, type PunchResult } from '../effects/PostFX';
 import type { QualityProfile } from '../settings/Settings';
+import { FORGE } from '../world/ForgePalette';
 
 /** Soft knee of the bloom high-pass; wide enough that the cut-off does not pop. */
 const BLOOM_KNEE = 0.8;
@@ -44,7 +45,7 @@ export class Renderer {
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
-    this.renderer.setClearColor(0x07080e, 1);
+    this.renderer.setClearColor(FORGE.top, 1);
   }
 
   applyQuality(profile: QualityProfile): void {

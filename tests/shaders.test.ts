@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { FORGE_FRAG } from '../src/shadows/ForgeSurface';
 import { OBSIDIAN_FRAG } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
+import { DOME_FRAG, MOLTEN_FRAG } from '../src/world/CavernShaders';
 
 const SHADERS: Array<[string, string]> = [
   ['FORGE_FRAG', FORGE_FRAG],
   ['OBSIDIAN_FRAG', OBSIDIAN_FRAG],
   ['BEAM_FRAG', BEAM_FRAG],
+  ['DOME_FRAG', DOME_FRAG],
+  ['MOLTEN_FRAG', MOLTEN_FRAG],
 ];
 
 describe.each(SHADERS)('%s', (_name, frag) => {
@@ -30,5 +33,15 @@ describe('emissive shader strengths use the specified HDR boosts', () => {
 
   it('obsidian rim is boosted', () => {
     expect(OBSIDIAN_FRAG).toContain('fres * 1.8');
+  });
+});
+
+describe('molten abyss shader', () => {
+  it('boosts the cracks into HDR', () => {
+    expect(MOLTEN_FRAG).toContain('crack * uCrackHdr');
+  });
+
+  it('hashes without sin', () => {
+    expect(MOLTEN_FRAG).toContain('.1031');
   });
 });

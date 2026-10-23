@@ -123,6 +123,7 @@ export class Game {
               resolve(window.__SF?.pos());
             }, ms);
           }),
+        cavern: (p) => this.world.cavern.tune(p ?? {}),
         light: (p) => {
           this.world.applyLighting(p);
           return { ...LIGHTING };
@@ -174,7 +175,7 @@ export class Game {
     if (portrait && (this.state.name === 'PLAYING' || this.state.name === 'SHADOW_TRANSITION')) {
       this.rotateLock = true;
       this.input.sample();
-      this.world.backdrop.follow(this.camera.camera.position);
+      this.world.cavern.follow(this.camera.camera.position);
       this.renderer.render(this.scene, this.camera.camera);
       return;
     }
@@ -196,7 +197,7 @@ export class Game {
       this.applyTier();
       this.ui.caption(`Graphics ${raised ? 'raised' : 'lowered'} to ${changed}`);
     }
-    this.world.backdrop.follow(this.camera.camera.position);
+    this.world.cavern.follow(this.camera.camera.position);
     this.renderer.render(this.scene, this.camera.camera);
   }
 
@@ -621,7 +622,6 @@ export class Game {
     this.player.group.visible = false;
     this.scene.background = new Color(FORGE.top);
     this.scene.fog = new FogExp2(cavernFog(), MENU_FOG_DENSITY);
-    this.world.backdrop.setTint(new Color(0x9eb6ff), new Color(0x07080e));
     this.state.set('MENU');
     this.ui.show('menu');
   }

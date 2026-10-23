@@ -1,4 +1,4 @@
-import { BoxGeometry, Color, CylinderGeometry, Group, Matrix4, Mesh, MeshBasicMaterial, Quaternion, Vector3 } from 'three';
+import { CylinderGeometry, Group, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
 import type { LevelConfig, PlatformConfig } from '../levels/LevelData';
 import { instanceKit, KIT, type EnvKit, type KitName } from './EnvKit';
 import type { LabMaterials } from './Materials';
@@ -14,29 +14,17 @@ export interface RoomBounds {
 const TILE = 4;
 const TILE_DEPTH = 0.5;
 
-/** Floor-edge dressing: a glowing pit under the room and pillars along the sides. */
+/** Floor-edge dressing: pillars along the sides. The molten abyss belongs to ForgeCavern. */
 export function buildDressing(
   bounds: RoomBounds,
   detail: 'low' | 'high',
   mats: LabMaterials,
-  accent: Color,
   kit: EnvKit | null = null,
   level: LevelConfig | null = null,
 ): Group {
   const root = new Group();
   const { minX, maxX, minZ, maxZ } = bounds;
   if (!Number.isFinite(minX)) return root;
-  const width = Math.max(8, maxX - minX);
-  const depth = Math.max(6, maxZ - minZ);
-  const midX = (minX + maxX) / 2;
-  const midZ = (minZ + maxZ) / 2;
-
-  const abyss = new Mesh(
-    new BoxGeometry(width + 24, 0.4, depth + 16),
-    new MeshBasicMaterial({ color: accent.clone().multiplyScalar(0.15) }),
-  );
-  abyss.position.set(midX, -7.2, midZ);
-  root.add(abyss);
 
   if (detail === 'high') {
     const kitPillar = kit?.merged(KIT.pillar) ?? null;
