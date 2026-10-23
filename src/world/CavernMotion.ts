@@ -25,7 +25,12 @@ const HOOK_TUBE = 0.04;
 const TROLLEY_DROP = 3;
 const CARRIAGE_SIZE: [number, number, number] = [0.8, 0.5, 0.8];
 const CARRIAGE_LIFT = 0.25;
-/** The Z sway is a quarter of the X sway, offset in phase so the tip traces a loose ellipse. */
+/** The shared chain geometry is built at this length; instances scale in Y by length / CHAIN_BASE_LENGTH. */
+const CHAIN_BASE_LENGTH = 6;
+/**
+ * The primary swing is about the X axis, so it moves the tip in Z. The cross sway is about the Z axis, so it moves the tip in X;
+ * it is a quarter of the primary amplitude, offset in phase so the tip traces a loose ellipse.
+ */
 const CROSS_SWAY = 0.25;
 const CROSS_PHASE = 1.3;
 /** The trolley chain's own gentle sway: amplitude (rad), period (s), phase. */
@@ -43,8 +48,9 @@ const ONE = new Vector3(1, 1, 1);
 /**
  * A chain hanging down from y = 0 to y = -length: ceil(length / 0.14) merged torus links at roughly a 0.14 m pitch, each
  * turned 90 degrees from the last so neighbours interlock. The merged links are then fitted in Y so the first link's top is
- * exactly y = 0 and the last link's bottom exactly y = -length (a few percent of link squash), which keeps a scaled instance's
- * end on the hook that follows it.
+ * exactly y = 0 and the last link's bottom exactly y = -length (a few percent of link squash). CavernMotion builds one at
+ * CHAIN_BASE_LENGTH (6) and scales each instance by length / 6 in Y, which keeps its end on the hook that follows it (at -length)
+ * while limiting the stretch of the links for the 3-7 m chains.
  */
 export function chainLinkGeometry(length: number): BufferGeometry {
   const count = Math.max(1, Math.ceil(length / LINK_PITCH));
@@ -74,9 +80,9 @@ export function hookGeometry(): BufferGeometry {
   return hook;
 }
 
-/** Sets an instance (or any) matrix to T(pivot) * R(euler) * S(1, length, 1). */
+/** Sets an instance (or any) matrix to T(pivot) * R(euler) * S(1, length / CHAIN_BASE_LENGTH, 1). */
 function composeChain(target: Matrix4, pivotX: number, pivotY: number, pivotZ: number, quat: Quaternion, length: number): void {
-  target.compose(position.set(pivotX, pivotY, pivotZ), quat, scale.set(1, length, 1));
+  target.compose(position.set(pivotX, pivotY, pivotZ), quat, scale.set(1, length / CHAIN_BASE_LENGTH, 1));
 }
 
 /**
@@ -129,9 +135,10 @@ export class CavernMotion {
     };
     const graphite = material('Graphite', 0x2a2a2e);
     const steel = material('Steel', 0x8a8f96);
-    const darkMetal = material('DarkMetal', 0x1c1c20);
+    // The carriage reads against the dark in the kit's amber; without it, the dark metal.
+    const carriageMaterial = kitMaterial('WarningAmber') ?? material('DarkMetal', 0x1c1c20);
 
-    const chainGeometry = chainLinkGeometry(1);
+    const chainGeometry = chainLinkGeometry(CHAIN_BASE_LENGTH);
     const hook = hookGeometry();
     // The carriage is intentionally a plain box: SHF_Prop_MaintenanceBox is not in FORGE_KIT, which stays the five structure pieces.
     const carriageGeometry = new BoxGeometry(...CARRIAGE_SIZE);
@@ -141,7 +148,7 @@ export class CavernMotion {
     this.hooks = this.instanced('hooks', hook, steel, sites.length);
     this.trolleyChain = this.instanced('trolley-chain', chainGeometry, graphite, 1);
     this.trolleyHook = this.instanced('trolley-hook', hook, steel, 1);
-    this.carriage = new Mesh(carriageGeometry, darkMetal);
+    this.carriage = new Mesh(carriageGeometry, carriageMaterial);
     this.carriage.name = 'carriage';
     this.carriage.castShadow = false;
     this.carriage.receiveShadow = false;
@@ -182,7 +189,7 @@ export class CavernMotion {
     this.clear();
   }
 
-  /** One chain instance T(pivot) R(sway) S(1, length, 1) and its hook T(pivot) R(sway) T(0, -length, 0). */
+  /** One chain instance T(pivot) R(sway) S(1, length / 6, 1) and its hook T(pivot) R(sway) T(0, -length, 0). */
   private writeSwing(chains: InstancedMesh, hooks: InstancedMesh, i: number, x: number, y: number, z: number, length: number, swayX: number, swayZ: number): void {
     quaternion.setFromEuler(euler.set(swayX, 0, swayZ));
     composeChain(matrix, x, y, z, quaternion, length);

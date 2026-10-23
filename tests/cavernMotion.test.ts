@@ -1,6 +1,6 @@
 import { InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Vector3, type BufferGeometry } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RAIL_Y, chainSites, gantryX, railLine, swayAngle } from '../src/world/CavernLayout';
+import { RAIL_Y, chainSites, gantryX, railLine, swayAngle, trolleyRange } from '../src/world/CavernLayout';
 import { CavernMotion, chainLinkGeometry, hookGeometry } from '../src/world/CavernMotion';
 import { ForgeCavern } from '../src/world/ForgeCavern';
 import type { ForgeKit } from '../src/world/ForgeKit';
@@ -116,15 +116,36 @@ describe('CavernMotion.build', () => {
     }
   });
 
-  it('uses the kit Graphite, Steel and DarkMetal materials when present', () => {
-    const kit = kitWith('SHF_MAT_Graphite', 'SHF_MAT_Steel', 'SHF_MAT_DarkMetal');
+  it('uses the kit Graphite, Steel and WarningAmber materials when present', () => {
+    const kit = kitWith('SHF_MAT_Graphite', 'SHF_MAT_Steel', 'SHF_MAT_DarkMetal', 'SHF_MAT_WarningAmber');
     const { motion } = built('medium', kit);
-    const [graphite, steel, dark] = kit.materials;
+    const [graphite, steel, , amber] = kit.materials;
     expect(named(motion, 'chains').material).toBe(graphite);
     expect(named(motion, 'trolley-chain').material).toBe(graphite);
     expect(named(motion, 'hooks').material).toBe(steel);
     expect(named(motion, 'trolley-hook').material).toBe(steel);
-    expect((motion.group.getObjectByName('carriage') as Mesh).material).toBe(dark);
+    expect((motion.group.getObjectByName('carriage') as Mesh).material).toBe(amber);
+  });
+
+  it('falls back to the kit DarkMetal for the carriage when the kit has no WarningAmber', () => {
+    const kit = kitWith('SHF_MAT_Graphite', 'SHF_MAT_Steel', 'SHF_MAT_DarkMetal');
+    const { motion } = built('medium', kit);
+    expect((motion.group.getObjectByName('carriage') as Mesh).material).toBe(kit.materials[2]);
+  });
+
+  it('builds the shared chain geometry at length 6 and scales instances by length / 6', () => {
+    const { motion, sites } = built('medium');
+    motion.update(0);
+    const chains = named(motion, 'chains');
+    chains.geometry.computeBoundingBox();
+    expect(chains.geometry.boundingBox!.min.y).toBeCloseTo(-6, 1);
+    sites.forEach((site, i) => {
+      const scale = new Vector3().setFromMatrixScale(matrixOf(chains, i));
+      expect(scale.y).toBeCloseTo(site.length / 6, 5);
+      expect(scale.x).toBeCloseTo(1, 5);
+    });
+    const trolley = new Vector3().setFromMatrixScale(matrixOf(named(motion, 'trolley-chain'), 0));
+    expect(trolley.y).toBeCloseTo(3 / 6, 5);
   });
 
   it('falls back to its own materials without a kit', () => {
@@ -195,12 +216,15 @@ describe('CavernMotion.update', () => {
     expect(chains.instanceMatrix.version).toBe(version + 1);
   });
 
-  it('rides the trolley along the rail with gantryX', () => {
+  it('rides the trolley along the forward half of the rail with gantryX', () => {
     const { motion, rail } = built('medium');
-    for (const t of [0, 10, 40]) {
+    const range = trolleyRange(rail);
+    for (const t of [0, 10, 40, 80]) {
       motion.update(t);
       const carriage = motion.group.getObjectByName('carriage')!;
       expect(carriage.position.x).toBeCloseTo(gantryX(t, rail), 6);
+      expect(carriage.position.x).toBeGreaterThanOrEqual(range.x0 - 1e-9);
+      expect(carriage.position.x).toBeLessThanOrEqual(range.x1 + 1e-9);
       expect(carriage.position.y).toBeCloseTo(RAIL_Y + 0.25, 6);
       expect(carriage.position.z).toBeCloseTo(rail.z, 6);
       const trolley = new Vector3().setFromMatrixPosition(matrixOf(named(motion, 'trolley-chain'), 0));
@@ -296,6 +320,20 @@ describe('ForgeCavern chains and gantry', () => {
     cavern.setKit(kitWith('SHF_MAT_Graphite', 'SHF_MAT_Steel', 'SHF_MAT_DarkMetal') as unknown as ForgeKit);
     return cavern;
   };
+
+  it('builds no chains, trolley or sparks without a kit, and builds them once a kit arrives', () => {
+    const cavern = new ForgeCavern();
+    cavern.setDetail('high', 400);
+    cavern.mount(BOUNDS, [], 5);
+    expect(motionGroup(cavern).children).toHaveLength(0);
+    expect(cavern.group.getObjectByName('sparks')).toBeUndefined();
+    cavern.setKit(kitWith('SHF_MAT_Graphite') as unknown as ForgeKit);
+    expect(motionGroup(cavern).children).toHaveLength(5);
+    expect(cavern.group.getObjectByName('sparks')).toBeDefined();
+    cavern.setKit(null);
+    expect(motionGroup(cavern).children).toHaveLength(0);
+    expect(cavern.group.getObjectByName('sparks')).toBeUndefined();
+  });
 
   it('builds on medium and high, nothing on low', () => {
     expect(motionGroup(cavernWith('medium')).children).toHaveLength(5);

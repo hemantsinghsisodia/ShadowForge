@@ -1,6 +1,6 @@
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Points, ShaderMaterial } from 'three';
 import { mulberry32 } from '../core/random';
-import { GANTRY_PAUSE, GANTRY_SPEED, gantryX, type Rail } from '../world/CavernLayout';
+import { GANTRY_PAUSE, GANTRY_SPEED, gantryX, trolleyRange, type Rail } from '../world/CavernLayout';
 import { FORGE } from '../world/ForgePalette';
 
 /** Per-spark constants; the GPU derives everything else from the clocks. vz already carries the away-from-corridor sign. */
@@ -17,7 +17,7 @@ const DROP = 3.2;
 const GRAVITY = 9.0;
 const MAX_VX = 0.4;
 const MAX_VZ = 0.3;
-/** Life 0.9-1.4 s. At 1.4 s a spark has fallen 8.82 m from 4.3 m up, to -4.52, well above the abyss. */
+/** Life 0.9-1.4 s. At 1.4 s a spark has fallen 8.82 m from 2.8 m up (RAIL_Y 6 less DROP), to -6.02, still above the abyss (-9). */
 const MIN_LIFE = 0.9;
 const MAX_LIFE = 1.4;
 const HDR = 2.4;
@@ -91,7 +91,8 @@ attribute float aSize;
 varying float vLife;
 varying float vAlpha;
 
-// Mirror of gantryX in CavernLayout.ts; mod() is already positive for a positive period.
+// Mirror of gantryX in CavernLayout.ts. uRailX0/uRailX1 hold the trolley range (trolleyRange), not the full rail;
+// mod() is already positive for a positive period.
 float gantryX(float t) {
   float travel = (uRailX1 - uRailX0) / uSpeed;
   float period = 2.0 * (travel + uPause);
@@ -154,8 +155,10 @@ export class Sparks {
   };
 
   constructor(seeds: SparkSeed[], rail: Rail) {
-    this.uniforms.uRailX0.value = rail.x0;
-    this.uniforms.uRailX1.value = rail.x1;
+    // The same range the CPU gantryX and the trolley ping-pong over.
+    const range = trolleyRange(rail);
+    this.uniforms.uRailX0.value = range.x0;
+    this.uniforms.uRailX1.value = range.x1;
     this.uniforms.uRailZ.value = rail.z;
     this.uniforms.uRailY.value = rail.y;
     const n = seeds.length;

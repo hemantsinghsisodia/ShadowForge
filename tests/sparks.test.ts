@@ -11,14 +11,26 @@ import {
   gantryX,
   levelBounds,
   railLine,
+  trolleyRange,
   type Rail,
 } from '../src/world/CavernLayout';
 import { ABYSS_Y, ForgeCavern } from '../src/world/ForgeCavern';
+import type { ForgeKit } from '../src/world/ForgeKit';
 import { CAVERN } from '../src/world/ForgePalette';
 
 const BOUNDS = { minX: 0, maxX: 24, minZ: -10, maxZ: 6 };
 const RAIL: Rail = railLine(BOUNDS, 'high')!;
+const RANGE = trolleyRange(RAIL);
 const SEED: SparkSeed = { phase: 0, speed: 1, vx: 0.2, vz: 0.1, size: 1.5 };
+
+/** A minimal kit: motion and sparks only build once a kit is present. */
+const FAKE_KIT = { allMaterials: () => [], prototype: () => null } as unknown as ForgeKit;
+function mounted(bounds = BOUNDS): ForgeCavern {
+  const cavern = new ForgeCavern();
+  cavern.mount(bounds);
+  cavern.setKit(FAKE_KIT);
+  return cavern;
+}
 
 function sparkPoints(cavern: ForgeCavern): Points | undefined {
   return cavern.group.children.find((child) => child.name === 'sparks') as Points | undefined;
@@ -94,7 +106,7 @@ describe('sparkState', () => {
   });
 
   it('has no pop across the 600 s life clock wrap, even though the trolley period does not divide 600', () => {
-    const period = 2 * ((RAIL.x1 - RAIL.x0) / GANTRY_SPEED + GANTRY_PAUSE);
+    const period = 2 * ((RANGE.x1 - RANGE.x0) / GANTRY_SPEED + GANTRY_PAUSE);
     expect(600 % period).toBeGreaterThan(1e-3);
     const dt = 1e-3;
     for (const s of seedSparks(300, 99)) {
@@ -136,7 +148,10 @@ describe('sparkState', () => {
         expect(nearest).toBeGreaterThanOrEqual(halfDepth + CAMERA_BAND);
         expect(lowest).toBeGreaterThan(ABYSS_Y);
         // The lowest point of a life is its end: still above the abyss, where alpha is already zero.
-        expect(RAIL_Y - 3.2 - 0.5 * 9 * (1 / s.speed) ** 2).toBeGreaterThan(ABYSS_Y);
+        const end = RAIL_Y - 3.2 - 0.5 * 9 * (1 / s.speed) ** 2;
+        expect(end).toBeGreaterThan(ABYSS_Y);
+        // RAIL_Y 6: origin 2.8, falling at most 0.5 * 9 * 1.4^2 = 8.82 m gives -6.02.
+        expect(end).toBeGreaterThanOrEqual(6 - 3.2 - 8.82 - 1e-6);
       }
     }
   });
@@ -170,11 +185,12 @@ describe('Sparks', () => {
     sparks.dispose();
   });
 
-  it('feeds the rail and gantry constants as uniforms', () => {
+  it('feeds the trolley range, rail and gantry constants as uniforms', () => {
     const sparks = new Sparks(seeds, RAIL);
     const u = (sparks.points.material as ShaderMaterial).uniforms;
-    expect(u.uRailX0.value).toBe(RAIL.x0);
-    expect(u.uRailX1.value).toBe(RAIL.x1);
+    expect(u.uRailX0.value).toBe(RANGE.x0);
+    expect(u.uRailX1.value).toBe(RANGE.x1);
+    expect(RANGE.x0).toBe((RAIL.x0 + RAIL.x1) / 2);
     expect(u.uRailZ.value).toBe(RAIL.z);
     expect(u.uRailY.value).toBe(RAIL.y);
     expect(u.uSpeed.value).toBe(GANTRY_SPEED);
@@ -227,8 +243,20 @@ describe('Sparks', () => {
 });
 
 describe('ForgeCavern sparks', () => {
+  it('builds no points without a kit, then builds them when the kit arrives', () => {
+    const cavern = new ForgeCavern();
+    cavern.mount(BOUNDS);
+    cavern.setDetail('high', 400);
+    expect(sparkPoints(cavern)).toBeUndefined();
+    cavern.setKit(FAKE_KIT);
+    expect(sparkPoints(cavern)).toBeDefined();
+    cavern.setKit(null);
+    expect(sparkPoints(cavern)).toBeUndefined();
+  });
+
   it('builds no points on the low tier, where there is no rail', () => {
     const cavern = new ForgeCavern();
+    cavern.setKit(FAKE_KIT);
     cavern.setDetail('low', 0);
     expect(sparkPoints(cavern)).toBeUndefined();
     cavern.setDetail('low', 400);
@@ -236,8 +264,7 @@ describe('ForgeCavern sparks', () => {
   });
 
   it('builds embers / 4 sparks on high and round(embers / 4) on medium', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     expect(sparkPoints(cavern)!.geometry.getAttribute('position').count).toBe(100);
     cavern.setDetail('medium', 200);
@@ -247,8 +274,7 @@ describe('ForgeCavern sparks', () => {
   });
 
   it('builds nothing at an ember budget of zero and disposes the old points', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     const points = sparkPoints(cavern)!;
     const geometry = vi.spyOn(points.geometry, 'dispose');
@@ -258,8 +284,7 @@ describe('ForgeCavern sparks', () => {
   });
 
   it('keeps the same points for an unchanged key and rebuilds on count, detail or bounds', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     const first = sparkPoints(cavern);
     cavern.setDetail('high', 400);
@@ -272,19 +297,18 @@ describe('ForgeCavern sparks', () => {
   });
 
   it('puts the rail of the mounted bounds into the uniforms', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     const rail = railLine(BOUNDS, 'high')!;
+    const range = trolleyRange(rail);
     const u = (sparkPoints(cavern)!.material as ShaderMaterial).uniforms;
-    expect(u.uRailX0.value).toBe(rail.x0);
-    expect(u.uRailX1.value).toBe(rail.x1);
+    expect(u.uRailX0.value).toBe(range.x0);
+    expect(u.uRailX1.value).toBe(range.x1);
     expect(u.uRailZ.value).toBe(rail.z);
   });
 
   it('drives time and pixel ratio, including into rebuilt sparks', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     cavern.setPixelRatio(1.5);
     cavern.update(700);
@@ -296,8 +320,7 @@ describe('ForgeCavern sparks', () => {
   });
 
   it('hides the sparks when CAVERN.sparks is off, including after a rebuild', () => {
-    const cavern = new ForgeCavern();
-    cavern.mount(BOUNDS);
+    const cavern = mounted();
     cavern.setDetail('high', 400);
     try {
       cavern.tune({ sparks: false });

@@ -21,6 +21,7 @@ import {
   sunShadowFrame,
   swayAngle,
   towerSites,
+  trolleyRange,
   type Placement,
 } from '../src/world/CavernLayout';
 import { ABYSS_Y } from '../src/world/ForgePalette';
@@ -361,6 +362,41 @@ describe('gantry rail and chains', () => {
         expect(placeStructures(bounds, level.platforms, 'low', 1).filter(isRailPiece)).toEqual([]);
       });
 
+      it('rail columns stay clear of the trolley line z = rail.z', () => {
+        for (const detail of ['medium', 'high'] as const) {
+          const rail = railLine(bounds, detail)!;
+          const columns = placeStructures(bounds, level.platforms, detail, 1).filter((p) => isRailPiece(p) && p.piece === 'SHF_Pillar_A');
+          expect(columns.length).toBeGreaterThanOrEqual(2);
+          for (const c of columns) {
+            // Footprint half-width 0.28 (rotationY is 0): its nearest face to the trolley line.
+            expect(Math.abs(c.position[2] - rail.z) - 0.28).toBeGreaterThanOrEqual(0.25);
+            expect(c.position[2]).toBeCloseTo(rail.z + 0.6, 9);
+          }
+          for (const b of placeStructures(bounds, level.platforms, detail, 1).filter((p) => isRailPiece(p) && p.piece === 'SHF_Structure_Beam')) {
+            expect(b.position[2]).toBeCloseTo(rail.z, 9);
+          }
+        }
+      });
+
+      it('rail-hung chains keep 1 m in x from every rail column and every +Z tower', () => {
+        for (const seed of [0, 1, 2, 3, 4, 7, 12345]) {
+          for (const detail of ['medium', 'high'] as const) {
+            const rail = railLine(bounds, detail)!;
+            const obstacles = [
+              ...placeStructures(bounds, level.platforms, detail, seed).filter((p) => isRailPiece(p) && p.piece === 'SHF_Pillar_A').map((p) => p.position[0]),
+              ...towerSites(bounds, detail).filter((t) => t.side === 1).map((t) => t.x),
+            ];
+            const onRail = chainSites(bounds, detail, seed).filter((c) => c.pivotY === RAIL_Y);
+            expect(onRail.length).toBeGreaterThan(0);
+            for (const c of onRail) {
+              expect(c.x).toBeGreaterThanOrEqual(rail.x0);
+              expect(c.x).toBeLessThanOrEqual(rail.x1);
+              for (const o of obstacles) expect(Math.abs(c.x - o)).toBeGreaterThanOrEqual(1);
+            }
+          }
+        }
+      });
+
       it('every chain swing envelope stays outside the camera band', () => {
         for (const seed of SEEDS_1_4) {
           for (const detail of ['medium', 'high'] as const) {
@@ -395,24 +431,31 @@ describe('gantry rail and chains', () => {
     expect(railPlacements({ x0: 0, x1: 24, z: 20, y: RAIL_Y }).filter((p) => p.role === 'tower').map((p) => p.position[0])).toEqual([0, 12, 24]);
   });
 
+  it('trolleyRange is the forward half of the rail', () => {
+    expect(trolleyRange({ x0: -5, x1: 25, z: 0, y: RAIL_Y })).toEqual({ x0: 10, x1: 25 });
+    expect(trolleyRange({ x0: 0, x1: 30, z: 0, y: RAIL_Y })).toEqual({ x0: 15, x1: 30 });
+  });
+
   describe('gantryX', () => {
     const rail = { x0: -5, x1: 25, z: 0, y: RAIL_Y };
-    const T = (rail.x1 - rail.x0) / GANTRY_SPEED;
+    const range = trolleyRange(rail);
+    const T = (range.x1 - range.x0) / GANTRY_SPEED;
     const P = 2 * (T + GANTRY_PAUSE);
 
-    it('starts at x0, ends the first leg at x1 and returns', () => {
-      expect(gantryX(0, rail)).toBe(rail.x0);
-      expect(gantryX(T, rail)).toBeCloseTo(rail.x1, 9);
-      expect(gantryX(T + GANTRY_PAUSE + T, rail)).toBeCloseTo(rail.x0, 9);
-      expect(gantryX(P, rail)).toBeCloseTo(rail.x0, 9);
+    it('starts at the trolley range start, ends the first leg at its end and returns', () => {
+      expect(gantryX(0, rail)).toBe(range.x0);
+      expect(gantryX(T, rail)).toBeCloseTo(range.x1, 9);
+      expect(gantryX(T + GANTRY_PAUSE + T, rail)).toBeCloseTo(range.x0, 9);
+      expect(gantryX(P, rail)).toBeCloseTo(range.x0, 9);
       expect(gantryX(P + 1, rail)).toBeCloseTo(gantryX(1, rail), 9);
     });
 
-    it('stays in [x0, x1] and wraps negative time', () => {
+    it('stays in the forward half of the rail and wraps negative time', () => {
       for (let t = -P; t <= 3 * P; t += 0.37) {
         const x = gantryX(t, rail);
-        expect(x).toBeGreaterThanOrEqual(rail.x0 - 1e-9);
-        expect(x).toBeLessThanOrEqual(rail.x1 + 1e-9);
+        expect(x).toBeGreaterThanOrEqual(range.x0 - 1e-9);
+        expect(x).toBeLessThanOrEqual(range.x1 + 1e-9);
+        expect(x).toBeGreaterThanOrEqual((rail.x0 + rail.x1) / 2 - 1e-9);
       }
     });
 
@@ -428,11 +471,11 @@ describe('gantry rail and chains', () => {
     it('holds exactly at each end for GANTRY_PAUSE', () => {
       for (let k = 0; k <= 10; k++) {
         const dt = (GANTRY_PAUSE * k) / 10;
-        expect(gantryX(T + dt - (k === 10 ? 1e-9 : 0), rail)).toBeCloseTo(rail.x1, 6);
-        expect(gantryX(2 * T + GANTRY_PAUSE + dt - (k === 10 ? 1e-9 : 0), rail)).toBeCloseTo(rail.x0, 6);
+        expect(gantryX(T + dt - (k === 10 ? 1e-9 : 0), rail)).toBeCloseTo(range.x1, 6);
+        expect(gantryX(2 * T + GANTRY_PAUSE + dt - (k === 10 ? 1e-9 : 0), rail)).toBeCloseTo(range.x0, 6);
       }
-      expect(gantryX(T + 0.5, rail)).toBe(rail.x1);
-      expect(gantryX(2 * T + GANTRY_PAUSE + 0.5, rail)).toBe(rail.x0);
+      expect(gantryX(T + 0.5, rail)).toBe(range.x1);
+      expect(gantryX(2 * T + GANTRY_PAUSE + 0.5, rail)).toBe(range.x0);
     });
   });
 

@@ -237,6 +237,7 @@ export class ForgeCavern {
     this.kit = kit;
     this.syncStructures();
     this.syncMotion();
+    this.syncSparks();
   }
 
   /** Sizes and centres the abyss for a level, or for the menu. A repeat call with equal arguments does nothing. */
@@ -354,7 +355,8 @@ export class ForgeCavern {
     const key = [this.detail, JSON.stringify(this.bounds), this.seed, this.kit ? 1 : 0].join('|');
     if (key === this.motionKey) return;
     try {
-      this.motion.build(railLine(this.bounds, this.detail), chainSites(this.bounds, this.detail, this.seed), this.kit);
+      // Without the kit there are no rail structures to hang from, so nothing moves.
+      this.motion.build(this.kit ? railLine(this.bounds, this.detail) : null, chainSites(this.bounds, this.detail, this.seed), this.kit);
     } catch (error) {
       // Leave the key unset so the next sync retries.
       console.error('ForgeCavern: chain build failed; continuing without chains', error);
@@ -365,13 +367,13 @@ export class ForgeCavern {
   }
 
   /**
-   * Rebuilds the trolley sparks only when the detail, bounds or spark count have changed. Medium takes round(embers / 4),
-   * high embers / 4 (floored), low and a level with no rail none.
+   * Rebuilds the trolley sparks only when the detail, bounds, spark count or kit presence have changed. Medium takes
+   * round(embers / 4), high embers / 4 (floored); low, a level with no rail, and a missing kit (no rail structures) none.
    */
   private syncSparks(): void {
     const quarter = this.emberCount / 4;
     const count = this.detail === 'low' ? 0 : this.detail === 'medium' ? Math.round(quarter) : Math.floor(quarter);
-    const key = [this.detail, JSON.stringify(this.bounds), count].join('|');
+    const key = [this.detail, JSON.stringify(this.bounds), count, this.kit ? 1 : 0].join('|');
     if (key === this.sparkKey) return;
     this.sparkKey = key;
     if (this.sparks) {
@@ -380,7 +382,7 @@ export class ForgeCavern {
       this.sparks = null;
     }
     const rail = railLine(this.bounds, this.detail);
-    if (!rail || count <= 0) return;
+    if (!this.kit || !rail || count <= 0) return;
     const { midZ } = corridor(this.bounds);
     this.sparks = new Sparks(seedSparks(count, SPARK_SEED, rail.z >= midZ ? 1 : -1), rail);
     this.sparks.setTime(this.time);

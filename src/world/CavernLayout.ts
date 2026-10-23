@@ -273,14 +273,17 @@ export function placeStructures(bounds: CavernBounds, slabs: PlatformConfig[], d
   });
   out.push(...towers(bounds, detail, rand));
   const rail = railLine(bounds, detail);
-  if (rail) out.push(...railPlacements(rail, detail === 'medium' ? MEDIUM_RAIL_COLUMN_SPACING : RAIL_COLUMN_SPACING));
+  if (rail) {
+    const side = rail.z < corridor(bounds).midZ ? -1 : 1;
+    out.push(...railPlacements(rail, detail === 'medium' ? MEDIUM_RAIL_COLUMN_SPACING : RAIL_COLUMN_SPACING, side));
+  }
   return out;
 }
 
-/** Rail beam height (the gantry rides here). */
-export const RAIL_Y = 7.5;
-/** The rail runs this far beyond the corridor edge on the +Z side. */
-export const RAIL_OFFSET = 11;
+/** Rail beam height (the gantry rides here). Low enough that the trolley and its sparks sit inside the camera frustum. */
+export const RAIL_Y = 6;
+/** The rail runs this far beyond the corridor edge on the +Z side. Not 9: that is where the +Z lamp towers stand. */
+export const RAIL_OFFSET = 10;
 /** Gantry trolley speed along the rail, m/s. */
 export const GANTRY_SPEED = 0.8;
 /** Seconds the trolley holds at each end of the rail. */
@@ -291,6 +294,12 @@ const RAIL_COLUMN_SPACING = 12;
 const MEDIUM_RAIL_COLUMN_SPACING = 24;
 const CHAIN_CEILING_Y = 14;
 const CHAIN_FAR_OFFSET = 12;
+/** Rail columns stand this far back from the trolley line (away from the corridor), so the hanging chain, hook and sparks clear them. */
+const RAIL_COLUMN_SETBACK = 0.6;
+/** Rail-hung chains keep at least this much x clearance from every rail column and +Z tower. */
+const CHAIN_CLEARANCE = 1.0;
+/** Nudged chains land this much beyond the clearance, so rounding cannot undercut it. */
+const CHAIN_CLEARANCE_MARGIN = 0.05;
 const CHAIN_COUNT = { medium: 6, high: 10 } as const;
 
 export interface Rail {
@@ -313,19 +322,27 @@ export function railLine(bounds: CavernBounds, detail: CavernDetail): Rail | nul
   return { x0: Math.min(...xs) - RAIL_EXTEND, x1: Math.max(...xs) + RAIL_EXTEND, z: midZ + halfDepth + RAIL_OFFSET, y: RAIL_Y };
 }
 
-/**
- * Pillar columns from the abyss up to the rail every `spacing` m (12 by default). Both ends are always included, so the last gap
- * may be shorter. A beam links each neighbouring pair at rail height.
- */
-export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING): Placement[] {
-  const span = rail.x1 - rail.x0;
+/** The x positions of the rail columns: every `spacing` m from x0, and always x1, so the last gap may be shorter. */
+function railColumnXs(rail: Rail, spacing: number): number[] {
   const xs: number[] = [];
   for (let x = rail.x0; x < rail.x1 - 1e-9; x += spacing) xs.push(x);
   xs.push(rail.x1);
+  return xs;
+}
+
+/**
+ * Pillar columns from the abyss up to the rail every `spacing` m (12 by default). Both ends are always included, so the last gap
+ * may be shorter. A beam links each neighbouring pair at rail height. The columns stand RAIL_COLUMN_SETBACK m back from the
+ * trolley line, on `side` (+1 when the rail is on the +Z side of the corridor, -1 on the -Z side), so nothing hanging from the
+ * rail passes through them; the beams stay on the line itself.
+ */
+export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING, side: 1 | -1 = 1): Placement[] {
+  const span = rail.x1 - rail.x0;
+  const xs = railColumnXs(rail, spacing);
   const scaleY = (rail.y - ABYSS_Y) / PILLAR_H;
   const out: Placement[] = xs.map((x) => ({
     piece: FORGE_KIT.pillar,
-    position: [x, ABYSS_Y, rail.z],
+    position: [x, ABYSS_Y, rail.z + RAIL_COLUMN_SETBACK * side],
     rotationY: 0,
     scale: [1, scaleY, 1],
     top: rail.y,
@@ -346,18 +363,25 @@ export function railPlacements(rail: Rail, spacing = RAIL_COLUMN_SPACING): Place
   return out;
 }
 
+/** The part of the rail the trolley travels: its forward half, [(x0 + x1) / 2, x1]. The rail and its columns stay full length. */
+export function trolleyRange(rail: Rail): { x0: number; x1: number } {
+  return { x0: (rail.x0 + rail.x1) / 2, x1: rail.x1 };
+}
+
 /**
- * Trolley x at time t: x0 -> x1 at GANTRY_SPEED, hold GANTRY_PAUSE, back to x0, hold. Closed form with a positive modulo, so the
- * GLSL mirror is a plain `mod` and four `if`s. Period = 2 * (len / GANTRY_SPEED + GANTRY_PAUSE).
+ * Trolley x at time t over trolleyRange(rail): start -> end at GANTRY_SPEED, hold GANTRY_PAUSE, back, hold. Closed form with a
+ * positive modulo, so the GLSL mirror is a plain `mod` and four `if`s. Period = 2 * (len / GANTRY_SPEED + GANTRY_PAUSE), len being
+ * the trolley range's length.
  */
 export function gantryX(t: number, rail: Rail): number {
-  const travel = (rail.x1 - rail.x0) / GANTRY_SPEED;
+  const { x0, x1 } = trolleyRange(rail);
+  const travel = (x1 - x0) / GANTRY_SPEED;
   const period = 2 * (travel + GANTRY_PAUSE);
   const u = ((t % period) + period) % period;
-  if (u < travel) return rail.x0 + GANTRY_SPEED * u;
-  if (u < travel + GANTRY_PAUSE) return rail.x1;
-  if (u < 2 * travel + GANTRY_PAUSE) return rail.x1 - GANTRY_SPEED * (u - travel - GANTRY_PAUSE);
-  return rail.x0;
+  if (u < travel) return x0 + GANTRY_SPEED * u;
+  if (u < travel + GANTRY_PAUSE) return x1;
+  if (u < 2 * travel + GANTRY_PAUSE) return x1 - GANTRY_SPEED * (u - travel - GANTRY_PAUSE);
+  return x0;
 }
 
 /** Pendulum angle in radians. */
@@ -375,9 +399,20 @@ export interface ChainSite {
   period: number;
 }
 
+/** x, or the nearest x in the rail range at least CHAIN_CLEARANCE from every obstacle when x starts too close to one. Deterministic. */
+function clearOf(x: number, obstacles: number[], rail: Rail): number {
+  const gap = CHAIN_CLEARANCE + CHAIN_CLEARANCE_MARGIN;
+  const free = (c: number) => c >= rail.x0 && c <= rail.x1 && obstacles.every((o) => Math.abs(c - o) >= CHAIN_CLEARANCE);
+  if (free(x)) return x;
+  const candidates = obstacles.flatMap((o) => [o - gap, o + gap]).filter(free);
+  if (candidates.length === 0) return x;
+  return candidates.reduce((best, c) => (Math.abs(c - x) < Math.abs(best - x) ? c : best));
+}
+
 /**
  * Hanging chains. Medium 6, high 10, low 0. The first half hang from the rail; the rest hang from the dark ceiling on the -Z
- * side. x is spread evenly (cell centres) along the rail's range. Length, amp, period and phase are seeded.
+ * side. x is spread evenly (cell centres) along the rail's range; a rail-hung chain that would hang within CHAIN_CLEARANCE of a
+ * rail column or a +Z tower is nudged to the nearest free x. Length, amp, period and phase are seeded.
  */
 export function chainSites(bounds: CavernBounds, detail: CavernDetail, seed: number): ChainSite[] {
   const rail = railLine(bounds, detail);
@@ -386,16 +421,20 @@ export function chainSites(bounds: CavernBounds, detail: CavernDetail, seed: num
   const half = count / 2;
   const { midZ, halfDepth } = corridor(bounds);
   const rand = mulberry32(seed);
+  const spacing = detail === 'medium' ? MEDIUM_RAIL_COLUMN_SPACING : RAIL_COLUMN_SPACING;
+  // Medium's tower sites are a subset of high's, so clearing the high set clears both.
+  const obstacles = [...railColumnXs(rail, spacing), ...towerSites(bounds, 'high').filter((t) => t.side === 1).map((t) => t.x)];
   const out: ChainSite[] = [];
   for (let i = 0; i < count; i++) {
     const onRail = i < half;
     const k = onRail ? i : i - half;
+    const cellX = rail.x0 + ((k + 0.5) / half) * (rail.x1 - rail.x0);
     const length = 4 + rand() * 3;
     const amp = 0.05 + rand() * 0.04;
     const period = 5 + rand() * 3;
     const phase = rand() * Math.PI * 2;
     out.push({
-      x: rail.x0 + ((k + 0.5) / half) * (rail.x1 - rail.x0),
+      x: onRail ? clearOf(cellX, obstacles, rail) : cellX,
       z: onRail ? rail.z : midZ - (halfDepth + CHAIN_FAR_OFFSET),
       pivotY: onRail ? RAIL_Y : CHAIN_CEILING_Y,
       length,
