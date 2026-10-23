@@ -179,11 +179,13 @@ export class Game {
     if (mode === 'PAUSED' || mode === 'LEVEL_COMPLETE' || mode === 'GAME_COMPLETE') {
       this.world.update(0);
     }
-    const dropped = this.monitor.update(dt, this.tier, this.save.data.settings.quality);
-    if (dropped) {
-      this.tier = dropped;
+    const changed = this.monitor.update(dt, this.tier, this.save.data.settings.quality);
+    if (changed) {
+      const tiers: AppliedQuality[] = ['low', 'medium', 'high'];
+      const raised = tiers.indexOf(changed) > tiers.indexOf(this.tier);
+      this.tier = changed;
       this.applyTier();
-      this.ui.caption(`Graphics lowered to ${dropped}`);
+      this.ui.caption(`Graphics ${raised ? 'raised' : 'lowered'} to ${changed}`);
     }
     this.world.backdrop.follow(this.camera.camera.position);
     this.renderer.render(this.scene, this.camera.camera);
