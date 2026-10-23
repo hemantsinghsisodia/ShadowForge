@@ -40,6 +40,7 @@ import { forgeKit, loadForgeKit } from './ForgeKit';
 import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
+import { levelBounds } from './CavernLayout';
 import { buildDressing, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -200,10 +201,6 @@ export class LevelWorld {
     this.applyShadowSize(shadowMapSize);
     this.root.add(this.sun, this.sun.target);
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
     for (const platform of config.platforms) {
       const mesh = new Mesh(worldUvBox(platform.size[0], platform.size[1], platform.size[2], 2), floorMat);
       mesh.position.set(platform.position[0], platform.position[1], platform.position[2]);
@@ -219,12 +216,9 @@ export class LevelWorld {
         views.push(strip);
       }
       this.platformViews.push(views);
-      minX = Math.min(minX, platform.position[0] - platform.size[0] / 2);
-      maxX = Math.max(maxX, platform.position[0] + platform.size[0] / 2);
-      minZ = Math.min(minZ, platform.position[2] - platform.size[2] / 2);
-      maxZ = Math.max(maxZ, platform.position[2] + platform.size[2] / 2);
     }
-    this.bounds = { minX, maxX, minZ, maxZ };
+    this.bounds = levelBounds(config.platforms);
+    const { minX, maxX } = this.bounds;
     this.cavern.mount(this.bounds, config.platforms, config.id);
     const midX = (minX + maxX) / 2;
     this.underLight = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);

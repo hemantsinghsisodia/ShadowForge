@@ -1,4 +1,5 @@
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Points, ShaderMaterial } from 'three';
+import { mulberry32 } from '../core/random';
 import type { CavernBounds } from '../world/ForgeCavern';
 import { ABYSS_Y, FORGE } from '../world/ForgePalette';
 
@@ -22,17 +23,6 @@ const FLOOR_CEILING = -1;
 const SIDE_SHARE = 0.8;
 const HDR = 1.6;
 const RED = 0xff3010;
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** Deterministic embers for a level: most in the side bands, the rest glowing up beneath the corridor. */
 export function seedEmbers(count: number, bounds: CavernBounds, seed: number): EmberSeed[] {
