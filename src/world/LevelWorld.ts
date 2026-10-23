@@ -169,11 +169,12 @@ export class LevelWorld {
       this.scene.environment = null;
       lab.applyEnv(null);
     }
+    // Before mountDressing: fallback pillars clone `stone`, so it must already hold this tier's normal map.
+    lab.applyDetail(profile.cavern);
     if (detailChanged && this.bounds) {
       this.mountDressing();
       this.mountRims();
     }
-    lab.applyDetail(profile.cavern);
     this.cavern.setDetail(profile.cavern, profile.embers);
     this.syncForgeLight();
     this.syncLampShadow();

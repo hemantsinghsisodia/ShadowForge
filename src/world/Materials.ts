@@ -19,7 +19,7 @@ import {
 import { mulberry32 } from '../core/random';
 import { buildLabEnvScene } from './LabEnvironment';
 import { LIGHTING } from './Lighting';
-import { floorHeights, heightToNormal, metalHeights, stoneHeights } from './NormalMaps';
+import { floorHeights, heightToNormal, metalHeights, normalStrength, stoneHeights } from './NormalMaps';
 
 /** One seed per painter, so every texture is the same on every load. */
 const SEED = {
@@ -176,7 +176,7 @@ export interface LabMaterials {
 }
 
 function normalTexture(heights: Float32Array, size: number, anisotropy: number): DataTexture {
-  const texture = new DataTexture(heightToNormal(heights, size, size, NORMAL_STRENGTH), size, size, RGBAFormat, UnsignedByteType);
+  const texture = new DataTexture(heightToNormal(heights, size, size, normalStrength(size, NORMAL_STRENGTH)), size, size, RGBAFormat, UnsignedByteType);
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
   texture.colorSpace = NoColorSpace;

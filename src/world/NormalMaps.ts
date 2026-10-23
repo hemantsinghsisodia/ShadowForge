@@ -15,7 +15,7 @@ function wrapDist(a: number, b: number, size: number): number {
 }
 
 /** Value noise on a cells x cells lattice that wraps, so the field tiles with period 1. */
-function makeNoise(rng: () => number, cells: number): (u: number, v: number) => number {
+export function makeNoise(rng: () => number, cells: number): (u: number, v: number) => number {
   const lattice = new Float32Array(cells * cells);
   for (let i = 0; i < lattice.length; i++) lattice[i] = rng();
   return (u, v) => {
@@ -69,6 +69,11 @@ function dentDepth(list: Dent[], x: number, y: number, size: number): number {
   return total;
 }
 
+/** Default relief strength for a texture of this size. Features span more texels at larger sizes, so strength scales with size. */
+export function normalStrength(size: number, base = 2): number {
+  return (base * size) / 256;
+}
+
 /**
  * Converts a height field to a tangent-space normal map (RGBA bytes) with central differences.
  * Edges wrap, so a tileable field gives a seamless map. A flat field encodes as (128, 128, 255, 255).
@@ -99,20 +104,22 @@ export function heightToNormal(heights: Float32Array, w: number, h: number, stre
   return out;
 }
 
-/** Panel seams: grooves on a 4 x 4 grid (about 2 px wide at 256 px, scaled with size) plus fine noise. */
+/**
+ * Panel seams: grooves on a 4 x 4 grid plus fine noise. The groove is a gaussian whose sigma scales with size, a
+ * few px wide at 256. A narrower profile is undersampled at 256 and would read stronger at 512 than at 256.
+ */
 export function floorHeights(size: number, seed: number): Float32Array {
   const rng = mulberry32(seed);
-  const fine = makeNoise(rng, Math.max(2, size >> 2));
+  const fine = makeNoise(rng, 64);
   const heights = new Float32Array(size * size);
   const cell = size / 4;
-  const halfWidth = size / 256;
-  const falloff = halfWidth * 1.5;
+  const sigma = (size / 256) * 1.75;
   for (let y = 0; y < size; y++) {
     const dy = wrapDist(y, Math.round(y / cell) * cell, size);
     for (let x = 0; x < size; x++) {
       const dx = wrapDist(x, Math.round(x / cell) * cell, size);
       const d = Math.min(dx, dy);
-      const groove = d < falloff ? smooth(1 - d / falloff) : 0;
+      const groove = Math.exp(-(d * d) / (2 * sigma * sigma));
       heights[y * size + x] = clamp01(0.6 - 0.35 * groove + fine(x / size, y / size) * 0.08);
     }
   }
@@ -123,7 +130,7 @@ export function floorHeights(size: number, seed: number): Float32Array {
 export function metalHeights(size: number, seed: number): Float32Array {
   const rng = mulberry32(seed);
   const list = dents(rng, size, 10, 0.05, 0.12, 0.18, 0.35);
-  const fine = makeNoise(rng, Math.max(2, size >> 3));
+  const fine = makeNoise(rng, 32);
   const heights = new Float32Array(size * size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -137,7 +144,7 @@ export function metalHeights(size: number, seed: number): Float32Array {
 export function stoneHeights(size: number, seed: number): Float32Array {
   const rng = mulberry32(seed);
   const coarse = makeNoise(rng, 8);
-  const detail = makeNoise(rng, Math.max(2, size >> 3));
+  const detail = makeNoise(rng, 32);
   const pits = dents(rng, size, 14, 0.01, 0.03, 0.2, 0.4);
   const heights = new Float32Array(size * size);
   for (let y = 0; y < size; y++) {
