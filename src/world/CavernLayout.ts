@@ -19,12 +19,13 @@ import { ABYSS_Y } from './ForgePalette';
  * Beams and trays are placed with rotationY 0 so they always run along X; their scale Y and Z stay 1.
  *
  * Safety rules, enforced by construction and by tests/cavernLayout.test.ts:
- *  (a) every placement with top > CAMERA_BAND has |z - midZ| >= halfDepth + 7;
+ *  (a) every placement that is not a 'support' has |z - midZ| >= halfDepth + 7 (tests also check top > -0.6 pieces);
  *  (b) under-slab support tops are <= their slab's bottom;
  *  (c) nothing above the floor spans the corridor footprint [minZ, maxZ].
- * Floor slabs bottom out at about -0.5, which is above CAMERA_BAND, so a support pillar stops at CAMERA_BAND
- * (never higher than the slab bottom). Slabs with bottom > 0 (raised, climbable platforms) get no supports,
- * and slabs whose cross beam top would exceed CAMERA_BAND get no cross beams.
+ * Rule (a) exists to keep pieces out from between the camera and the player. Pieces with role 'support'
+ * lie entirely inside their own slab's XZ footprint (inset 0.6, wider than any piece), beneath the slab,
+ * and the camera is always above the floor, so they cannot occlude and are exempt from (a). Rule (b)
+ * and footprint containment govern them instead. Every other role ('tower', 'link') obeys (a).
  */
 
 export interface Placement {
@@ -34,6 +35,8 @@ export interface Placement {
   scale: [number, number, number];
   /** World Y of the piece's highest point after scaling. */
   top: number;
+  /** 'support' pieces sit under their own slab and are exempt from rule (a); see the file header. */
+  role: 'support' | 'tower' | 'link';
 }
 
 export interface Rim {
@@ -49,13 +52,13 @@ export interface Rim {
   outward: [number, number];
 }
 
-/** Anything taller than this inside the corridor could end up between the camera and the player. */
-const CAMERA_BAND = -0.6;
 const PILLAR_H = 3.08;
 const BEAM_H = 0.2;
 const TRAY_H = 0.1;
 const LAMP_H = 1.78;
 const INSET = 0.6;
+/** Closer than this, two 0.56 m pillars would overlap. */
+const MIN_COLUMN_GAP = 0.6;
 const SUPPORT_SPACING = 6;
 const TOWER_SPACING = 12;
 const TOWER_OVERSHOOT = 10;
@@ -86,30 +89,29 @@ export function corridor(bounds: CavernBounds): { midZ: number; halfDepth: numbe
   return { midZ: (bounds.minZ + bounds.maxZ) / 2, halfDepth: (bounds.maxZ - bounds.minZ) / 2 };
 }
 
-/** Evenly spaced points from a to b inclusive, no further apart than SUPPORT_SPACING. */
-function along(a: number, b: number): number[] {
-  const segments = Math.max(1, Math.ceil((b - a) / SUPPORT_SPACING - 1e-9));
+/** Evenly spaced points from a to b inclusive, no further apart than SUPPORT_SPACING (and at least minSegments apart-steps). */
+function along(a: number, b: number, minSegments = 1): number[] {
+  const segments = Math.max(minSegments, Math.ceil((b - a) / SUPPORT_SPACING - 1e-9));
   return Array.from({ length: segments + 1 }, (_, i) => a + ((b - a) * i) / segments);
 }
 
 function supports(slab: PlatformConfig, rand: () => number, full: boolean): Placement[] {
   const [w, h, d] = slab.size;
   const bottom = slab.position[1] - h / 2;
-  // Raised slabs (bottom above the floor line) have open air under them: no supports.
-  if (bottom > 0 || bottom <= ABYSS_Y) return [];
-  // Floor slabs bottom out at about -0.5, inside the corridor, so a pillar capped at the slab bottom would
-  // break rule (a). Cap it at CAMERA_BAND instead: it stops at most 0.1 m under the slab, hidden by the inset.
-  const topY = Math.min(bottom, CAMERA_BAND);
+  if (bottom <= ABYSS_Y + 1) return [];
   const x0 = slab.position[0] - w / 2 + INSET;
   const x1 = slab.position[0] + w / 2 - INSET;
   const z0 = slab.position[2] - d / 2 + INSET;
   const z1 = slab.position[2] + d / 2 - INSET;
-  const scaleY = (topY - ABYSS_Y) / PILLAR_H;
+  const scaleY = (bottom - ABYSS_Y) / PILLAR_H;
   const spots = new Map<string, [number, number]>();
   const add = (x: number, z: number) => spots.set(`${x.toFixed(3)},${z.toFixed(3)}`, [x, z]);
   // Edges longer than SUPPORT_SPACING get intermediate pillars, so no run exceeds that gap.
-  const xs = full && w > SUPPORT_SPACING ? along(x0, x1) : [x0, x1];
-  const zs = full && d > SUPPORT_SPACING ? along(z0, z1) : [z0, z1];
+  // A slab only 1.2 m across has its two corner columns collapse into one; lengthen the other axis to keep 4 pillars.
+  const narrowX = x1 - x0 < MIN_COLUMN_GAP;
+  const narrowZ = z1 - z0 < MIN_COLUMN_GAP;
+  const xs = full && (w > SUPPORT_SPACING || narrowZ) ? along(x0, x1, narrowZ ? 3 : 1) : [x0, x1];
+  const zs = full && (d > SUPPORT_SPACING || narrowX) ? along(z0, z1, narrowX ? 3 : 1) : [z0, z1];
   for (const x of xs) {
     add(x, z0);
     add(x, z1);
@@ -125,13 +127,13 @@ function supports(slab: PlatformConfig, rand: () => number, full: boolean): Plac
       position: [x, ABYSS_Y, z],
       rotationY: rand() * Math.PI * 0.5,
       scale: [1, scaleY, 1],
-      top: topY,
+      top: bottom,
+      role: 'support',
     });
   }
   const span = x1 - x0;
-  // Cross beams sit 0.4 under the slab; if that would leave their top above CAMERA_BAND (rule a), skip them.
   const y = bottom - 0.4;
-  if (full && span >= 0.5 && y + BEAM_H <= CAMERA_BAND) {
+  if (full && span >= 0.5) {
     for (const z of [z0, z1]) {
       out.push({
         piece: FORGE_KIT.beam,
@@ -139,6 +141,7 @@ function supports(slab: PlatformConfig, rand: () => number, full: boolean): Plac
         rotationY: 0,
         scale: [span / 2, 1, 1],
         top: y + BEAM_H,
+        role: 'support',
       });
     }
   }
@@ -165,6 +168,7 @@ function towers(bounds: CavernBounds, detail: CavernDetail, rand: () => number):
       rotationY: rand() * Math.PI * 0.5,
       scale: [1, scaleY, 1],
       top: ABYSS_Y + PILLAR_H * scaleY,
+      role: 'tower',
     });
     out.push({
       piece: FORGE_KIT.lamp,
@@ -172,6 +176,7 @@ function towers(bounds: CavernBounds, detail: CavernDetail, rand: () => number):
       rotationY: rand() * Math.PI * 2,
       scale: [1, 1, 1],
       top: TOWER_TOP + LAMP_H,
+      role: 'tower',
     });
   }
   for (const side of bySide) {
@@ -180,8 +185,8 @@ function towers(bounds: CavernBounds, detail: CavernDetail, rand: () => number):
       const [xb] = side[i];
       const scale: [number, number, number] = [(xb - xa) / 2, 1, 1];
       const x = (xa + xb) / 2;
-      out.push({ piece: FORGE_KIT.beam, position: [x, BEAM_Y, z], rotationY: 0, scale, top: BEAM_Y + BEAM_H });
-      out.push({ piece: FORGE_KIT.tray, position: [x, TRAY_Y, z], rotationY: 0, scale, top: TRAY_Y + TRAY_H });
+      out.push({ piece: FORGE_KIT.beam, position: [x, BEAM_Y, z], rotationY: 0, scale, top: BEAM_Y + BEAM_H, role: 'link' });
+      out.push({ piece: FORGE_KIT.tray, position: [x, TRAY_Y, z], rotationY: 0, scale, top: TRAY_Y + TRAY_H, role: 'link' });
     }
   }
   return out;

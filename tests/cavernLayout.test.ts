@@ -5,7 +5,6 @@ import { corridor, exposedRims, levelBounds, placeStructures, type Placement } f
 import { ABYSS_Y } from '../src/world/ForgePalette';
 
 const SEEDS = [0, 1, 7, 12345];
-const CAMERA_BAND = -0.6;
 /** Z half-extent of each piece's footprint at scale 1 (pieces run along X, or are pillars/lamps). */
 const HALF_Z: Record<string, number> = {
   SHF_Pillar_A: 0.28,
@@ -25,28 +24,47 @@ describe('CavernLayout', () => {
     const slabs = level.platforms;
 
     describe(`level ${level.id}`, () => {
-      it('above-floor pieces stay outside the camera band', () => {
+      it('non-support pieces stay outside the camera band', () => {
         for (const seed of SEEDS) {
-          for (const p of placeStructures(bounds, slabs, 'high', seed)) {
-            if (p.top > CAMERA_BAND) expect(Math.abs(p.position[2] - midZ)).toBeGreaterThanOrEqual(halfDepth + 7);
+          for (const detail of ['high', 'medium'] as const) {
+            for (const p of placeStructures(bounds, slabs, detail, seed)) {
+              if (p.role === 'support') continue;
+              expect(Math.abs(p.position[2] - midZ)).toBeGreaterThanOrEqual(halfDepth + 7);
+            }
           }
         }
       });
 
-      it('supports stay under their slab', () => {
+      it('supports stay under their slab and inside its footprint', () => {
         const floorable = slabsOf(slabs);
-        for (const p of placeStructures(bounds, slabs, 'high', 3)) {
-          if (p.position[1] !== ABYSS_Y || p.piece !== 'SHF_Pillar_A') continue;
-          // Under-slab pillar (towers also start at the abyss, but sit outside every slab footprint).
+        const out = placeStructures(bounds, slabs, 'high', 3).filter((p) => p.role === 'support');
+        expect(out.length).toBeGreaterThan(0);
+        for (const p of out) {
+          const halfX = p.piece === 'SHF_Pillar_A' ? 0.4 : p.scale[0];
+          const halfZ = p.piece === 'SHF_Pillar_A' ? 0.4 : 0.11;
           const owner = floorable.find(
             (s) =>
-              Math.abs(p.position[0] - s.position[0]) <= s.size[0] / 2 &&
-              Math.abs(p.position[2] - s.position[2]) <= s.size[2] / 2,
+              p.top <= s.position[1] - s.size[1] / 2 + 1e-9 &&
+              p.position[0] - halfX >= s.position[0] - s.size[0] / 2 &&
+              p.position[0] + halfX <= s.position[0] + s.size[0] / 2 &&
+              p.position[2] - halfZ >= s.position[2] - s.size[2] / 2 &&
+              p.position[2] + halfZ <= s.position[2] + s.size[2] / 2,
           );
-          if (!owner) continue;
-          const bottom = owner.position[1] - owner.size[1] / 2;
-          expect(p.top).toBeLessThanOrEqual(bottom + 1e-9);
-          expect(p.top).toBeLessThanOrEqual(CAMERA_BAND);
+          expect(owner).toBeDefined();
+        }
+      });
+
+      it('every floor slab gets at least 4 supports on high', () => {
+        const out = placeStructures(bounds, slabs, 'high', 3).filter((p) => p.role === 'support' && p.piece === 'SHF_Pillar_A');
+        for (const s of slabsOf(slabs)) {
+          if (s.position[1] - s.size[1] / 2 <= ABYSS_Y + 1) continue;
+          const mine = out.filter(
+            (p) =>
+              Math.abs(p.position[0] - s.position[0]) < s.size[0] / 2 &&
+              Math.abs(p.position[2] - s.position[2]) < s.size[2] / 2 &&
+              p.top <= s.position[1] - s.size[1] / 2 + 1e-9,
+          );
+          expect(mine.length).toBeGreaterThanOrEqual(4);
         }
       });
 
@@ -54,7 +72,7 @@ describe('CavernLayout', () => {
         const minZ = midZ - halfDepth;
         const maxZ = midZ + halfDepth;
         for (const p of placeStructures(bounds, slabs, 'high', 5)) {
-          if (p.top <= CAMERA_BAND) continue;
+          if (p.role === 'support') continue;
           const half = HALF_Z[p.piece] * Math.max(p.scale[2], 1);
           const z0 = p.position[2] - half;
           const z1 = p.position[2] + half;
@@ -94,49 +112,45 @@ describe('CavernLayout', () => {
     for (const lamp of out.filter((p) => p.piece === 'SHF_Lamp_Industrial')) expect(lamp.top).toBeCloseTo(2.78, 9);
   });
 
-  it('puts support pillars under a floor slab and skips raised slabs', () => {
+  it('puts support pillars and cross beams under a slab, topping exactly at its bottom', () => {
     const bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 };
-    const low = placeStructures(bounds, [slab(0, 0)], 'high', 1);
-    const under = low.filter((p) => Math.abs(p.position[0]) <= 2 && Math.abs(p.position[2]) <= 2);
-    expect(under.filter((p) => p.piece === 'SHF_Pillar_A').length).toBe(4);
-    for (const p of under) expect(p.top).toBeLessThanOrEqual(-0.6);
-    expect(under.filter((p) => p.piece === 'SHF_Structure_Beam').length).toBe(2);
-    const raised = placeStructures(bounds, [slab(0, 0, 4, 4, 3)], 'high', 1);
-    expect(raised.filter((p) => Math.abs(p.position[0]) <= 2 && Math.abs(p.position[2]) <= 2)).toEqual([]);
+    const under = placeStructures(bounds, [slab(0, 0)], 'high', 1).filter((p) => p.role === 'support');
+    const pillars = under.filter((p) => p.piece === 'SHF_Pillar_A');
+    expect(pillars.length).toBe(4);
+    for (const p of pillars) {
+      expect(p.position[1]).toBe(ABYSS_Y);
+      expect(p.scale[1]).toBeCloseTo((-0.5 - ABYSS_Y) / 3.08, 9);
+      expect(p.top).toBeCloseTo(-0.5, 9);
+    }
+    const beams = under.filter((p) => p.piece === 'SHF_Structure_Beam');
+    expect(beams.length).toBe(2);
+    for (const b of beams) {
+      expect(b.position[1]).toBeCloseTo(-0.9, 9);
+      expect(b.top).toBeCloseTo(-0.7, 9);
+      expect(b.scale[0]).toBeCloseTo(1.4, 9);
+    }
+  });
+
+  it('medium keeps corner supports only', () => {
+    const bounds = { minX: -8, maxX: 8, minZ: -2, maxZ: 2 };
+    const under = placeStructures(bounds, [slab(0, 0, 16, 4)], 'medium', 1).filter((p) => p.role === 'support');
+    expect(under.length).toBe(4);
+  });
+
+  it('gives raised slabs supports too, topping at their bottom', () => {
+    const bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 };
+    const raised = placeStructures(bounds, [slab(0, 0, 4, 4, 3)], 'high', 1).filter((p) => p.role === 'support' && p.piece === 'SHF_Pillar_A');
+    expect(raised.length).toBe(4);
+    for (const p of raised) expect(p.top).toBeCloseTo(2.75, 9);
   });
 
   it('adds intermediate pillars along edges longer than 6 m', () => {
     const bounds = { minX: -8, maxX: 8, minZ: -2, maxZ: 2 };
     const out = placeStructures(bounds, [slab(0, 0, 16, 4)], 'high', 1);
-    const under = out.filter((p) => p.piece === 'SHF_Pillar_A' && Math.abs(p.position[2]) < 2);
+    const under = out.filter((p) => p.role === 'support' && p.piece === 'SHF_Pillar_A');
     const xs = [...new Set(under.map((p) => +p.position[0].toFixed(3)))].sort((a, b) => a - b);
     expect(xs.length).toBeGreaterThan(2);
     for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeLessThanOrEqual(6 + 1e-9);
-  });
-
-  it('places supports under at least one slab in every level, and none under raised slabs', () => {
-    for (const level of LEVELS) {
-      const bounds = levelBounds(level.platforms);
-      const out = placeStructures(bounds, level.platforms, 'high', 1);
-      const { midZ, halfDepth } = corridor(bounds);
-      const under = out.filter((p) => p.piece === 'SHF_Pillar_A' && Math.abs(p.position[2] - midZ) < halfDepth);
-      expect(under.length).toBeGreaterThan(0);
-      for (const p of under) {
-        const raised = level.platforms.some(
-          (s) =>
-            s.position[1] - s.size[1] / 2 > 0 &&
-            Math.abs(p.position[0] - s.position[0]) < s.size[0] / 2 &&
-            Math.abs(p.position[2] - s.position[2]) < s.size[2] / 2 &&
-            !level.platforms.some(
-              (f) =>
-                f.position[1] - f.size[1] / 2 <= 0 &&
-                Math.abs(p.position[0] - f.position[0]) <= f.size[0] / 2 &&
-                Math.abs(p.position[2] - f.position[2]) <= f.size[2] / 2,
-            ),
-        );
-        expect(raised).toBe(false);
-      }
-    }
   });
 
   it('exposedRims of two abutting 4x4 slabs totals 24 m (their 4 m seam is hidden)', () => {
