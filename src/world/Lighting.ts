@@ -15,6 +15,11 @@ export interface LightingConfig {
   wallTint: number;
   /** Multiplier on the Kenney kit base colours; emissives are untouched. */
   kitScale: number;
+  /** Warm underglow directional light base intensity; LevelWorld multiplies it by the molten pulse. */
+  under: number;
+  underColor: number;
+  /** Hemisphere ground colour: the warm bounce from the molten abyss. */
+  hemiGround: number;
 }
 
 export const LIGHTING: LightingConfig = {
@@ -26,6 +31,9 @@ export const LIGHTING: LightingConfig = {
   floorTint: 0x4d5664,
   wallTint: 0x434b58,
   kitScale: 0.28,
+  under: 0.6,
+  underColor: 0xff6a2a,
+  hemiGround: 0x4a1e0c,
 };
 
 /** The hemisphere fill steps down when the env map supplies ambient reflection and light. */

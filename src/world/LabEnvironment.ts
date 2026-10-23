@@ -5,7 +5,6 @@ import {
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
-  RingGeometry,
   Scene,
   ShaderMaterial,
   SphereGeometry,
@@ -36,7 +35,7 @@ function gradientSphere(): Mesh {
     side: BackSide,
     depthWrite: false,
     uniforms: {
-      floorColor: { value: new Color(0x05070c) },
+      floorColor: { value: new Color(0x2a0e06) },
       horizonColor: { value: new Color(0x1a2a3a) },
       zenithColor: { value: new Color(0x0b1220) },
     },
@@ -80,7 +79,10 @@ export function buildLabEnvScene(): Scene {
     });
     add(new Mesh(new PlaneGeometry(panel.size[0], panel.size[1]), material), panel.position);
   }
-  const ring = new MeshBasicMaterial({ color: new Color(0x5ce1ff).multiplyScalar(1.5), side: DoubleSide });
-  add(new Mesh(new RingGeometry(3, 3.3, 48), ring), [0, -2, 0]);
+  const molten = new MeshBasicMaterial({ color: new Color(0xff6a1f).multiplyScalar(1.2), side: DoubleSide });
+  const emitter = new Mesh(new PlaneGeometry(14, 14), molten);
+  emitter.rotation.x = -Math.PI / 2;
+  emitter.position.set(0, -4, 0);
+  scene.add(emitter);
   return scene;
 }

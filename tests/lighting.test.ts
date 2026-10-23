@@ -15,6 +15,12 @@ describe('lighting config', () => {
     expect(LIGHTING.kitScale).toBe(0.28);
   });
 
+  it('has the molten underglow values', () => {
+    expect(LIGHTING.under).toBe(0.6);
+    expect(LIGHTING.underColor).toBe(0xff6a2a);
+    expect(LIGHTING.hemiGround).toBe(0x4a1e0c);
+  });
+
   it('picks the hemisphere fill by env map availability', () => {
     expect(hemiIntensity(true)).toBe(LIGHTING.hemiEnv);
     expect(hemiIntensity(false)).toBe(LIGHTING.hemiNoEnv);

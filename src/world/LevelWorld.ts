@@ -37,7 +37,7 @@ import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
 import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
 import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
-import { levelAtmosphere } from './ForgePalette';
+import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
@@ -80,6 +80,7 @@ export class LevelWorld {
   private column: Mesh | null = null;
   private sun: DirectionalLight | null = null;
   private hemi: HemisphereLight | null = null;
+  private underLight: DirectionalLight | null = null;
   private config: LevelConfig | null = null;
   private dressing: Group | null = null;
   private pillars: Mesh[] = [];
@@ -148,7 +149,14 @@ export class LevelWorld {
       this.sun.intensity = LIGHTING.sun;
       this.sun.color.setHex(LIGHTING.sunColor);
     }
-    if (this.hemi) this.hemi.intensity = hemiIntensity(this.profile?.envMap ?? true);
+    if (this.hemi) {
+      this.hemi.intensity = hemiIntensity(this.profile?.envMap ?? true);
+      this.hemi.groundColor.setHex(LIGHTING.hemiGround);
+    }
+    if (this.underLight) {
+      this.underLight.color.setHex(LIGHTING.underColor);
+      this.underLight.intensity = LIGHTING.under * moltenPulse(this.time);
+    }
     const envOn = this.env !== null && this.scene.environment === this.env;
     if (envOn) this.scene.environmentIntensity = LIGHTING.env;
     lab.floor.color.setHex(LIGHTING.floorTint);
@@ -182,7 +190,7 @@ export class LevelWorld {
     const atmosphere = levelAtmosphere(config.id);
     this.scene.background = new Color(atmosphere.background);
     this.scene.fog = new FogExp2(atmosphere.fog, atmosphere.density);
-    this.hemi = new HemisphereLight(0xb7c6dc, 0x243044, hemiIntensity(this.profile?.envMap ?? true));
+    this.hemi = new HemisphereLight(0xb7c6dc, LIGHTING.hemiGround, hemiIntensity(this.profile?.envMap ?? true));
     this.root.add(this.hemi);
     this.sun = new DirectionalLight(LIGHTING.sunColor, LIGHTING.sun);
     this.sun.position.set(-12, 22, 8);
@@ -215,6 +223,12 @@ export class LevelWorld {
     }
     this.bounds = { minX, maxX, minZ, maxZ };
     this.cavern.mount(this.bounds);
+    const midX = (minX + maxX) / 2;
+    this.underLight = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
+    this.underLight.position.set(midX + 3, -12, 4);
+    this.underLight.target.position.set(midX, 0, 0);
+    this.underLight.castShadow = false;
+    this.root.add(this.underLight, this.underLight.target);
     this.mountDressing();
     const token = ++this.loadToken;
     const kit = envKit();
@@ -360,6 +374,7 @@ export class LevelWorld {
   update(dt: number, px = 0, pz = 0): void {
     this.time += dt;
     this.cavern.update(this.time);
+    if (this.underLight) this.underLight.intensity = LIGHTING.under * moltenPulse(this.time);
     if (this.exit) this.exit.rotation.z = this.time * 0.6;
     if (this.column) {
       const mat = this.column.material as MeshBasicMaterial;
@@ -447,6 +462,7 @@ export class LevelWorld {
     this.column = null;
     this.sun = null;
     this.hemi = null;
+    this.underLight = null;
     this.bounds = null;
     this.pillars = [];
     this.platformViews = [];
@@ -669,7 +685,10 @@ export class LevelWorld {
     const glow = createBeam(new Color(0xffb15a));
     rig.add(lamp, light, glow.cone, glow.halo);
     aimBeam(glow, new Vector3(3.15, -2.35, -0.35), 3.8, 1);
-    this.menu.add(floor, monument, plate, rig);
+    const underglow = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
+    underglow.position.set(3, -12, 4);
+    underglow.castShadow = false;
+    this.menu.add(floor, monument, plate, rig, underglow);
     this.menu.position.set(0, 0.15, 0);
   }
 }
