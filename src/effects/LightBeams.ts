@@ -31,13 +31,36 @@ varying vec3 vNormal;
 varying vec3 vWorld;
 uniform vec3 color;
 uniform float strength;
+uniform float time;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// Bilinear value noise; the second axis wraps every 8 cells so the cone has no seam.
+float beamNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float y0 = mod(i.y, 8.0);
+  float y1 = mod(i.y + 1.0, 8.0);
+  float a = hash12(vec2(i.x, y0));
+  float b = hash12(vec2(i.x + 1.0, y0));
+  float c = hash12(vec2(i.x, y1));
+  float d = hash12(vec2(i.x + 1.0, y1));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - abs(dot(normalize(vNormal), viewDir)), 1.6);
   float along = smoothstep(0.0, 0.2, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
   float dist = length(cameraPosition - vWorld);
   float nearFade = smoothstep(0.6, 2.4, dist);
-  float alpha = fres * along * strength * 0.28 * nearFade;
+  float shimmer = mix(0.75, 1.15, beamNoise(vec2(vUv.y * 6.0 - time * 0.35, vUv.x * 8.0)));
+  float alpha = fres * along * strength * 0.34 * nearFade * shimmer;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -73,6 +96,7 @@ export function createBeam(color: Color): BeamView {
     uniforms: {
       color: { value: color.clone() },
       strength: { value: 1 },
+      time: { value: 0 },
     },
     vertexShader: BEAM_VERT,
     fragmentShader: BEAM_FRAG,
@@ -96,6 +120,11 @@ export function createBeam(color: Color): BeamView {
   );
   halo.scale.set(0.7, 0.7, 1);
   return { cone, halo, material };
+}
+
+/** Drives the slow shimmer drift along the beam. One uniform write, no allocation. */
+export function setBeamTime(view: BeamView, time: number): void {
+  view.material.uniforms.time.value = time;
 }
 
 /** Point the cone from the lamp toward `direction`, with `length` in world units. */

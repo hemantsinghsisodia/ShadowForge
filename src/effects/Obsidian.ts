@@ -6,6 +6,8 @@ import {
   InstancedMesh,
   Matrix4,
   ShaderMaterial,
+  UniformsLib,
+  UniformsUtils,
 } from 'three';
 import type { SolidBox } from '../shadows/types';
 import { COLLAPSE_TIME, RISE_TIME, collapseProgress, riseProgress } from './ForgeTimeline';
@@ -19,6 +21,7 @@ export const OBSIDIAN_VERT = `
 varying vec3 vNormal;
 varying vec3 vWorld;
 varying float vK;
+#include <fog_pars_vertex>
 #ifdef USE_INSTANCING
 attribute vec3 aAxis;
 #endif
@@ -37,7 +40,9 @@ void main() {
   vec4 world = model * vec4(p, 1.0);
   vWorld = world.xyz;
   vNormal = mat3(model) * normal;
-  gl_Position = projectionMatrix * viewMatrix * world;
+  vec4 mvPosition = viewMatrix * world;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
 }
 `;
 
@@ -50,6 +55,7 @@ uniform float stab;
 uniform float rise;
 uniform float hot;
 uniform vec3 color;
+#include <fog_pars_fragment>
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.4);
@@ -60,6 +66,7 @@ void main() {
   float lead = smoothstep(0.75, 1.0, vK) * (1.0 - rise) * 3.0 + hot * 2.5;
   col += mix(color, vec3(1.0, 0.85, 0.6), 0.5) * lead;
   gl_FragColor = vec4(col, 0.78 + fres * 0.2);
+  #include <fog_fragment>
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -69,6 +76,7 @@ void main() {
 export function createObsidianMaterial(stability: number, color = new Color(0x5ce1ff)): ShaderMaterial {
   return new ShaderMaterial({
     uniforms: {
+      ...UniformsUtils.clone(UniformsLib.fog),
       stab: { value: stability },
       color: { value: new Color(color) },
       rise: { value: 1 },
@@ -79,6 +87,7 @@ export function createObsidianMaterial(stability: number, color = new Color(0x5c
     transparent: true,
     depthWrite: true,
     side: DoubleSide,
+    fog: true,
   });
 }
 

@@ -27,7 +27,7 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
+import { aimBeam, createBeam, setBeamTime, type BeamView } from '../effects/LightBeams';
 import { RISE_DELAY, collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
 import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
@@ -86,6 +86,7 @@ export class LevelWorld {
   readonly guideMeshes: Mesh[] = [];
   readonly consoles: { id: string; surfaceId: string; group: Group }[] = [];
   private readonly lamps = new Map<string, LampView>();
+  private menuBeam: BeamView | null = null;
   private readonly casterGroups = new Map<string, Group>();
   private readonly casterKeys = new Map<string, string>();
   private readonly guides = new Group();
@@ -533,10 +534,17 @@ export class LevelWorld {
     }
     this.menu.rotation.y = Math.sin(this.time * 0.15) * 0.18;
     for (const forge of this.forges) forge.setTime(this.time);
+    this.lamps.forEach(this.tickBeam);
+    if (this.menuBeam) setBeamTime(this.menuBeam, this.time);
     this.solidDt = dt;
     this.solidViews.forEach(this.tickSolid);
     if (this.prewarm && this.root.visible && --this.prewarmFrames <= 0) this.dropPrewarm();
   }
+
+  /** Bound once so the per-frame `forEach` allocates nothing. */
+  private readonly tickBeam = (view: LampView): void => {
+    setBeamTime(view.glow, this.time);
+  };
 
   /** Bound once so the per-frame `forEach` allocates nothing. */
   private readonly tickSolid = (view: SolidView, id: string): void => {
@@ -881,6 +889,7 @@ export class LevelWorld {
     const glow = createBeam(new Color(0xffb15a));
     rig.add(lamp, light, glow.cone, glow.halo);
     aimBeam(glow, new Vector3(3.15, -2.35, -0.35), 3.8, 1);
+    this.menuBeam = glow;
     const underglow = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
     underglow.position.set(3, -12, 4);
     underglow.castShadow = false;
