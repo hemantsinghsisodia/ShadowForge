@@ -74,7 +74,7 @@ export const gradeShader = {
         texel.b = min(max(b, 0.0), 64.0);
       }
       vec2 uv = vUv - 0.5;
-      float vig = smoothstep(0.88, 0.3, length(uv * vec2(1.2, 1.05)));
+      float vig = (1.0 - smoothstep(0.3, 0.88, length(uv * vec2(1.2, 1.05))));
       float grain = fract(sin(dot(vUv + fract(time * 0.37), vec2(12.9898, 78.233))) * 43758.5453);
       vec3 col = texel.rgb;
       col *= mix(1.0, vig, 0.5 * amount);

@@ -28,6 +28,8 @@ describe('forge palette', () => {
     expect(CAVERN.glow).toBe(0.8);
     expect(CAVERN.crackHdr).toBe(3.0);
     expect(CAVERN.flow).toBe(0.06);
+    expect(CAVERN.structures).toBe(true);
+    expect(CAVERN.walls).toBe(true);
   });
 
   it('mixes in sRGB space', () => {

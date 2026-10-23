@@ -35,7 +35,7 @@ varying float vAlpha;
 void main() {
   float d = length(gl_PointCoord - 0.5);
   if (d > 0.5 || vAlpha < 0.01) discard;
-  float soft = smoothstep(0.5, 0.05, d);
+  float soft = 1.0 - smoothstep(0.05, 0.5, d);
   gl_FragColor = vec4(vColor, soft * vAlpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

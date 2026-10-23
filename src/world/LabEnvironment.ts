@@ -54,7 +54,7 @@ function gradientSphere(): Mesh {
       void main() {
         float h = vDir.y;
         vec3 color = h < 0.0
-          ? mix(horizonColor, floorColor, smoothstep(0.0, -0.45, h))
+          ? mix(horizonColor, floorColor, (1.0 - smoothstep(-0.45, 0.0, h)))
           : mix(horizonColor, zenithColor, smoothstep(0.0, 0.6, h));
         gl_FragColor = vec4(color, 1.0);
       }

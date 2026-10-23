@@ -21,7 +21,7 @@ void main() {
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.4);
   vec3 tint = mix(vec3(0.95, 0.22, 0.12), color, clamp(stab, 0.0, 1.0));
-  vec3 warm = mix(tint, vec3(1.0, 0.62, 0.28), smoothstep(0.45, 0.15, stab));
+  vec3 warm = mix(tint, vec3(1.0, 0.62, 0.28), (1.0 - smoothstep(0.15, 0.45, stab)));
   vec3 col = vec3(0.015, 0.03, 0.045) + warm * (0.22 + fres * 1.35);
   col += warm * fres * 1.8;
   gl_FragColor = vec4(col, 0.78 + fres * 0.2);

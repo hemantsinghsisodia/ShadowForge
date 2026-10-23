@@ -59,7 +59,7 @@ void main() {
   float scan = 0.55 + 0.45 * sin(cell.y * 3.1 - time * 4.0);
   float ripple = 0.5 + 0.5 * sin(vUv.x * 18.0 - time * 2.2 + flow);
   float age = time - wave;
-  float ring = wave > 0.0 ? smoothstep(0.45, 0.0, abs(length(vUv - 0.5) * 2.2 - age * 1.6)) : 0.0;
+  float ring = wave > 0.0 ? (1.0 - smoothstep(0.0, 0.45, abs(length(vUv - 0.5) * 2.2 - age * 1.6))) : 0.0;
   float dissolve = hash(floor(cell * 2.0));
   float broken = solid * smoothstep(stab + 0.05, stab - 0.15, dissolve);
   vec3 base = vec3(0.012, 0.025, 0.04);

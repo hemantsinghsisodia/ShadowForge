@@ -34,7 +34,7 @@ uniform float strength;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - abs(dot(normalize(vNormal), viewDir)), 1.6);
-  float along = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.35, vUv.y);
+  float along = smoothstep(0.0, 0.2, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
   float dist = length(cameraPosition - vWorld);
   float nearFade = smoothstep(0.6, 2.4, dist);
   float alpha = fres * along * strength * 0.28 * nearFade;

@@ -109,7 +109,8 @@ export class LevelWorld {
   showMenu(on: boolean): void {
     this.menu.visible = on;
     this.root.visible = !on;
-    this.cavern.mount(on ? MENU_BOUNDS : (this.bounds ?? MENU_BOUNDS));
+    if (on || !this.bounds) this.cavern.mount(MENU_BOUNDS, [], 0);
+    else this.cavern.mount(this.bounds, this.config?.platforms ?? [], this.config?.id ?? 0);
   }
 
   bindRenderer(renderer: WebGLRenderer): void {
@@ -222,7 +223,7 @@ export class LevelWorld {
       maxZ = Math.max(maxZ, platform.position[2] + platform.size[2] / 2);
     }
     this.bounds = { minX, maxX, minZ, maxZ };
-    this.cavern.mount(this.bounds);
+    this.cavern.mount(this.bounds, config.platforms, config.id);
     const midX = (minX + maxX) / 2;
     this.underLight = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
     this.underLight.position.set(midX + 3, -12, 4);

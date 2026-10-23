@@ -1,6 +1,7 @@
 import { BackSide, Color, Group, Mesh, PlaneGeometry, ShaderMaterial, SphereGeometry, type BufferGeometry, type Vector3 } from 'three';
 import { Embers, seedEmbers } from '../effects/Embers';
 import { DOME_FRAG, DOME_VERT, MOLTEN_FRAG, MOLTEN_VERT } from './CavernShaders';
+import type { PlatformConfig } from '../levels/LevelData';
 import { ABYSS_Y, CAVERN, FORGE, moltenPulse } from './ForgePalette';
 
 export type CavernDetail = 'low' | 'medium' | 'high';
@@ -17,6 +18,9 @@ export { ABYSS_Y };
 const DOME_RADIUS = 150;
 const EMBER_SEED = 1337;
 const NUMERIC_KEYS = ['crackHdr', 'glow', 'flow', 'fogDensity'] as const;
+const BOOLEAN_KEYS = ['embers', 'structures', 'walls'] as const;
+/** The abyss noise scrolls slowly, so it wraps far later than the embers (which stay on 600). */
+const ABYSS_PERIOD = 6000;
 
 /** The forge cavern around the level: a dome that rides the camera and a molten abyss under the floor. */
 export class ForgeCavern {
@@ -26,6 +30,9 @@ export class ForgeCavern {
   readonly dome = new Group();
   private detail: CavernDetail;
   private bounds: CavernBounds = MENU_BOUNDS;
+  private slabs: PlatformConfig[] = [];
+  private seed = 0;
+  private mountKey: string | null = null;
   private readonly domeMesh: Mesh;
   private readonly abyssMesh: Mesh;
   private embers: Embers | null = null;
@@ -35,7 +42,7 @@ export class ForgeCavern {
   private pixelRatio = 1;
   // Shared by every material the tiers build, so time, pulse and tuning survive a rebuild.
   private readonly uniforms = {
-    uTime: { value: 0 },
+    uAbyssTime: { value: 0 },
     uPulse: { value: 1 },
     uFlow: { value: CAVERN.flow },
     uGlow: { value: CAVERN.glow },
@@ -59,6 +66,7 @@ export class ForgeCavern {
 
     this.abyssMesh = new Mesh(new PlaneGeometry(1, 1), this.abyssMaterial(this.detail));
     this.abyssMesh.name = 'abyss';
+    this.abyssMesh.renderOrder = 1;
     this.group.add(this.abyssMesh);
     this.mount(this.bounds);
   }
@@ -77,17 +85,27 @@ export class ForgeCavern {
     this.abyssMesh.material = this.abyssMaterial(detail);
   }
 
-  /** Sizes and centres the abyss for a level, or for the menu. */
-  mount(bounds: CavernBounds): void {
+  /** Sizes and centres the abyss for a level, or for the menu. A repeat call with equal arguments does nothing. */
+  mount(bounds: CavernBounds, slabs: PlatformConfig[] = [], seed = 0): void {
     const { minX, maxX, minZ, maxZ } = bounds;
     if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) return;
+    const key = JSON.stringify([minX, maxX, minZ, maxZ, seed, slabs.map((s) => [s.position, s.size])]);
+    if (key === this.mountKey) return;
+    this.mountKey = key;
     this.bounds = bounds;
+    this.slabs = slabs;
+    this.seed = seed;
     this.abyssMesh.geometry.dispose();
     const geometry = new PlaneGeometry(maxX - minX + 120, maxZ - minZ + 100);
     geometry.rotateX(-Math.PI / 2);
     this.abyssMesh.geometry = geometry;
     this.abyssMesh.position.set((minX + maxX) / 2, ABYSS_Y, (minZ + maxZ) / 2);
     this.syncEmbers();
+  }
+
+  /** What the cavern was last mounted for; structures read this. */
+  get mounted(): { bounds: CavernBounds; slabs: PlatformConfig[]; seed: number } {
+    return { bounds: this.bounds, slabs: this.slabs, seed: this.seed };
   }
 
   follow(camera: Vector3): void {
@@ -102,7 +120,7 @@ export class ForgeCavern {
   update(time: number): void {
     this.time = time;
     this.embers?.setTime(time);
-    this.uniforms.uTime.value = time % 600;
+    this.uniforms.uAbyssTime.value = time % ABYSS_PERIOD;
     this.uniforms.uPulse.value = moltenPulse(time);
   }
 
@@ -112,7 +130,10 @@ export class ForgeCavern {
       const value = partial[key];
       if (typeof value === 'number' && Number.isFinite(value)) CAVERN[key] = value;
     }
-    if (typeof partial.embers === 'boolean') CAVERN.embers = partial.embers;
+    for (const key of BOOLEAN_KEYS) {
+      const value = partial[key];
+      if (typeof value === 'boolean') CAVERN[key] = value;
+    }
     if (this.embers) this.embers.points.visible = CAVERN.embers;
     this.uniforms.uCrackHdr.value = CAVERN.crackHdr;
     this.uniforms.uGlow.value = CAVERN.glow;

@@ -3,7 +3,7 @@ import { ShaderChunk } from 'three';
 const VARYING = 'varying float vFogWorldY;';
 const FOG_VERTEX = 'vFogWorldY = (transpose(mat3(viewMatrix)) * mvPosition.xyz).y + cameraPosition.y;';
 const FOG_MIX = 'gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );';
-const FOG_MIX_HEIGHT = `vec3 fogC = mix( fogColor * 0.18, fogColor, smoothstep( 2.0, -7.0, vFogWorldY ) );
+const FOG_MIX_HEIGHT = `vec3 fogC = mix( fogColor * 0.18, fogColor, 1.0 - smoothstep( -7.0, 2.0, vFogWorldY ) );
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );`;
 
 function patch(chunk: string, target: string, replacement: string): string {

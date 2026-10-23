@@ -1,4 +1,4 @@
-import { Mesh, PlaneGeometry, ShaderMaterial } from 'three';
+import { Mesh, PlaneGeometry, Points, ShaderMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CAVERN } from '../src/world/ForgePalette';
 import { ABYSS_Y, ForgeCavern, MENU_BOUNDS } from '../src/world/ForgeCavern';
@@ -101,7 +101,69 @@ describe('ForgeCavern', () => {
     cavern.setDetail('low', 0);
     cavern.update(700);
     const material = abyss(cavern).material as ShaderMaterial;
-    expect(material.uniforms.uTime.value).toBeCloseTo(100);
+    expect(material.uniforms.uAbyssTime.value).toBeCloseTo(700);
     expect(material.uniforms.uPulse.value).toBeGreaterThan(0.7);
+    cavern.update(6100);
+    expect(material.uniforms.uAbyssTime.value).toBeCloseTo(100);
+  });
+
+  it('wraps the abyss clock at 6000 and the embers at 600', () => {
+    const cavern = new ForgeCavern();
+    cavern.setDetail('high', 50);
+    cavern.update(6700);
+    const material = abyss(cavern).material as ShaderMaterial;
+    expect(material.uniforms.uAbyssTime.value).toBeCloseTo(700);
+    const points = cavern.group.children.find((child) => child instanceof Points) as Points;
+    const emberMaterial = points.material as ShaderMaterial;
+    expect(emberMaterial.uniforms.uTime.value).toBeCloseTo(100);
+  });
+
+  it('draws the abyss after the opaque scene and the dome before it', () => {
+    const cavern = new ForgeCavern();
+    expect(abyss(cavern).renderOrder).toBe(1);
+    expect((cavern.dome.children[0] as Mesh).renderOrder).toBe(-1);
+  });
+
+  it('does nothing on a repeat mount with equal arguments', () => {
+    const cavern = new ForgeCavern();
+    const bounds = { minX: 0, maxX: 20, minZ: 0, maxZ: 10 };
+    const slabs = [{ position: [1, 0, 2] as [number, number, number], size: [4, 1, 4] as [number, number, number] }];
+    cavern.mount(bounds, slabs, 3);
+    expect(cavern.mounted.seed).toBe(3);
+    expect(cavern.mounted.slabs).toBe(slabs);
+    const geometry = abyss(cavern).geometry;
+    cavern.mount({ ...bounds }, [{ position: [1, 0, 2], size: [4, 1, 4] }], 3);
+    expect(abyss(cavern).geometry).toBe(geometry);
+    cavern.mount(bounds, slabs, 4);
+    expect(abyss(cavern).geometry).not.toBe(geometry);
+    const second = abyss(cavern).geometry;
+    cavern.mount(bounds, [], 4);
+    expect(abyss(cavern).geometry).not.toBe(second);
+  });
+
+  it('builds on the first mount, so a fresh cavern is already menu-sized', () => {
+    const cavern = new ForgeCavern();
+    expect((abyss(cavern).geometry as PlaneGeometry).parameters.width).toBe(MENU_BOUNDS.maxX - MENU_BOUNDS.minX + 120);
+    const geometry = abyss(cavern).geometry;
+    cavern.mount(MENU_BOUNDS, [], 0);
+    expect(abyss(cavern).geometry).toBe(geometry);
+  });
+
+  it('tunes structures and walls as booleans only', () => {
+    const cavern = new ForgeCavern();
+    try {
+      expect(CAVERN.structures).toBe(true);
+      expect(CAVERN.walls).toBe(true);
+      const out = cavern.tune({ structures: false, walls: false });
+      expect(out.structures).toBe(false);
+      expect(out.walls).toBe(false);
+      cavern.tune({ structures: true });
+      cavern.tune({ structures: 3 as never });
+      expect(CAVERN.structures).toBe(true);
+      expect(CAVERN.walls).toBe(false);
+    } finally {
+      CAVERN.structures = true;
+      CAVERN.walls = true;
+    }
   });
 });

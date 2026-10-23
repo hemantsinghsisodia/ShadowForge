@@ -60,7 +60,7 @@ export const MOLTEN_FRAG = `
   uniform vec3 uGlowCol;
   uniform vec3 uCrackCol;
   uniform vec3 uHaze;
-  uniform float uTime;
+  uniform float uAbyssTime;
   uniform float uFlow;
   uniform float uGlow;
   uniform float uCrackHdr;
@@ -79,7 +79,7 @@ export const MOLTEN_FRAG = `
     return sum / norm;
   }
   void main() {
-    vec2 p = vWorld.xz * 0.18 + uFlow * uTime;
+    vec2 p = vWorld.xz * 0.18 + uFlow * uAbyssTime;
     #ifdef WARP
       p += 0.6 * vec2(vnoise(p + 3.1), vnoise(p - 1.7));
     #endif

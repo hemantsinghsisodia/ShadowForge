@@ -19,6 +19,8 @@ export const CAVERN = {
   flow: 0.06,
   fogDensity: 0.024,
   embers: true,
+  structures: true,
+  walls: true,
 };
 
 export const MENU_FOG_DENSITY = 0.045;
