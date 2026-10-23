@@ -134,7 +134,7 @@ export class LevelWorld {
       lab.applyEnv(null);
     }
     if (detailChanged && this.bounds) this.mountDressing();
-    this.backdrop.setDetail(profile.sky);
+    this.backdrop.setDetail(profile.cavern);
   }
 
   /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */

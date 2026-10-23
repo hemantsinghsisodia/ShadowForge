@@ -96,8 +96,10 @@ export interface QualityProfile {
   dressingDetail: 'low' | 'high';
   /** Multisample count for the post-processing buffer. 0 on Low, which has no composer. */
   msaa: number;
-  /** Space backdrop detail. High is the same on phones and desktops. */
-  sky: 'low' | 'medium' | 'high';
+  /** Backdrop detail. High is the same on phones and desktops. */
+  cavern: 'low' | 'medium' | 'high';
+  /** Ember particle budget. 0 disables them. */
+  embers: number;
   bloomStrength: number;
   bloomRadius: number;
   bloomThreshold: number;
@@ -121,7 +123,8 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       playerLight: false,
       dressingDetail: 'low',
       msaa: 0,
-      sky: 'low',
+      cavern: 'low',
+      embers: 0,
       bloomStrength: 0,
       bloomRadius: 0,
       bloomThreshold: 1,
@@ -143,7 +146,8 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
       playerLight: true,
       dressingDetail: 'high',
       msaa: coarse ? 2 : 4,
-      sky: 'medium',
+      cavern: 'medium',
+      embers: coarse ? 120 : 200,
       bloomStrength: 0.4,
       bloomRadius: 0.35,
       bloomThreshold: 1.2,
@@ -164,7 +168,8 @@ export function profileFor(tier: AppliedQuality, coarse: boolean): QualityProfil
     playerLight: true,
     dressingDetail: 'high',
     msaa: 4,
-    sky: 'high',
+    cavern: 'high',
+    embers: 400,
     bloomStrength: 0.5,
     bloomRadius: 0.4,
     bloomThreshold: 1.2,
