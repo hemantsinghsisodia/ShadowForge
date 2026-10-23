@@ -41,8 +41,10 @@ const offset = new Vector3();
 const ONE = new Vector3(1, 1, 1);
 
 /**
- * A chain hanging down from y = 0 to about y = -length: ceil(length / 0.14) merged torus links at a 0.14 m pitch, each
- * turned 90 degrees from the last so neighbours interlock. The first link's top sits a hair above y = 0.
+ * A chain hanging down from y = 0 to y = -length: ceil(length / 0.14) merged torus links at roughly a 0.14 m pitch, each
+ * turned 90 degrees from the last so neighbours interlock. The merged links are then fitted in Y so the first link's top is
+ * exactly y = 0 and the last link's bottom exactly y = -length (a few percent of link squash), which keeps a scaled instance's
+ * end on the hook that follows it.
  */
 export function chainLinkGeometry(length: number): BufferGeometry {
   const count = Math.max(1, Math.ceil(length / LINK_PITCH));
@@ -56,6 +58,11 @@ export function chainLinkGeometry(length: number): BufferGeometry {
   const merged = mergeGeometries(links);
   for (const link of links) link.dispose();
   if (!merged) throw new Error('CavernMotion: chain links failed to merge');
+  merged.computeBoundingBox();
+  const { min, max } = merged.boundingBox!;
+  merged.translate(0, -max.y, 0);
+  merged.scale(1, length / (max.y - min.y), 1);
+  merged.computeBoundingBox();
   return merged;
 }
 
@@ -126,6 +133,7 @@ export class CavernMotion {
 
     const chainGeometry = chainLinkGeometry(1);
     const hook = hookGeometry();
+    // The carriage is intentionally a plain box: SHF_Prop_MaintenanceBox is not in FORGE_KIT, which stays the five structure pieces.
     const carriageGeometry = new BoxGeometry(...CARRIAGE_SIZE);
     this.geometries.push(chainGeometry, hook, carriageGeometry);
 

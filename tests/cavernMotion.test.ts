@@ -35,15 +35,13 @@ describe('chainLinkGeometry', () => {
     }
   });
 
-  it('hangs from y = 0 down to about -length', () => {
-    for (const length of [1, 4, 6]) {
+  it('hangs from exactly y = 0 down to -length', () => {
+    for (const length of [1, 3, 4, 6]) {
       const geometry = chainLinkGeometry(length);
       geometry.computeBoundingBox();
       const box = geometry.boundingBox!;
-      expect(box.max.y).toBeGreaterThan(0);
-      expect(box.max.y).toBeLessThan(0.1);
-      expect(box.min.y).toBeLessThan(-length + 0.1);
-      expect(box.min.y).toBeGreaterThan(-length - 0.3);
+      expect(Math.abs(box.max.y)).toBeLessThan(0.02);
+      expect(Math.abs(box.min.y + length)).toBeLessThan(0.02);
     }
   });
 
@@ -70,6 +68,20 @@ describe('hookGeometry', () => {
     geometry.computeBoundingBox();
     expect(geometry.boundingBox!.max.y).toBeLessThan(0.1);
     expect(geometry.boundingBox!.min.y).toBeLessThan(-0.45);
+  });
+
+  it('leaves the quadrant above and to +X of the ring centre open', () => {
+    const p = hookGeometry().getAttribute('position');
+    let open = 0;
+    let closed = 0;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i);
+      const y = p.getY(i) + 0.25; // relative to the ring centre
+      if (x > 0.05 && y > 0.05) open++;
+      if (x < -0.05 && y > 0.05) closed++; // the opposite upper quadrant is part of the ring
+    }
+    expect(open).toBe(0);
+    expect(closed).toBeGreaterThan(0);
   });
 });
 
@@ -148,6 +160,28 @@ describe('CavernMotion.update', () => {
     const angle = swayAngle(t, s.phase, s.amp, s.period);
     expect(Math.abs(angle)).toBeGreaterThan(0.01);
     expect(hook.z - s.z).toBeCloseTo(-s.length * Math.sin(angle) * Math.cos(swayAngle(t, s.phase + 1.3, s.amp * 0.25, s.period)), 2);
+  });
+
+  it('keeps each chain end on its hook', () => {
+    const { motion } = built('high');
+    const v = new Vector3();
+    const lowest = (mesh: InstancedMesh, i: number) => {
+      const m = matrixOf(mesh, i);
+      const p = mesh.geometry.getAttribute('position');
+      let y = Infinity;
+      for (let k = 0; k < p.count; k++) y = Math.min(y, v.fromBufferAttribute(p, k).applyMatrix4(m).y);
+      return y;
+    };
+    const hookTop = (hooks: InstancedMesh, i: number) => {
+      hooks.geometry.computeBoundingBox();
+      return new Vector3().setFromMatrixPosition(matrixOf(hooks, i)).y + hooks.geometry.boundingBox!.max.y;
+    };
+    for (const t of [0, 3.3, 9]) {
+      motion.update(t);
+      const pairs: [InstancedMesh, InstancedMesh, number][] = [[named(motion, 'trolley-chain'), named(motion, 'trolley-hook'), 0]];
+      for (let i = 0; i < named(motion, 'chains').count; i++) pairs.push([named(motion, 'chains'), named(motion, 'hooks'), i]);
+      for (const [chains, hooks, i] of pairs) expect(Math.abs(lowest(chains, i) - hookTop(hooks, i))).toBeLessThan(0.1);
+    }
   });
 
   it('changes the instance matrices over time and flags them for upload', () => {
