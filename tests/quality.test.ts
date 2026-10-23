@@ -65,6 +65,17 @@ describe('forge light gate', () => {
   });
 });
 
+describe('lamp shadows gate', () => {
+  it('is on for high only, coarse or fine', () => {
+    expect(profileFor('high', false).lampShadows).toBe(true);
+    expect(profileFor('high', true).lampShadows).toBe(true);
+    expect(profileFor('medium', false).lampShadows).toBe(false);
+    expect(profileFor('medium', true).lampShadows).toBe(false);
+    expect(profileFor('low', false).lampShadows).toBe(false);
+    expect(profileFor('low', true).lampShadows).toBe(false);
+  });
+});
+
 describe('nextTier', () => {
   it('drops a tier when the newest window is under 42 fps', () =>
     expect(nextTier([40], 'high', 'auto', false)).toBe('medium'));

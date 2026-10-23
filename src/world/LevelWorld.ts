@@ -43,6 +43,7 @@ import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { levelBounds, sunShadowFrame } from './CavernLayout';
+import { LAMP_SHADOW, pickShadowLamp } from './LampShadow';
 import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -105,6 +106,8 @@ export class LevelWorld {
   /** The one light that swells at the plate during a forge. Medium / high cavern tiers only; never added or removed per frame. */
   private forgeLight: PointLight | null = null;
   private readonly forgePoint = { x: 0, y: 0, z: 0 };
+  /** Id of the one lamp that may cast a real shadow (High only); chosen at load. */
+  private shadowLampId: string | null = null;
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
   private gl: WebGLRenderer | null = null;
@@ -171,6 +174,13 @@ export class LevelWorld {
     }
     this.cavern.setDetail(profile.cavern, profile.embers);
     this.syncForgeLight();
+    this.syncLampShadow();
+  }
+
+  /** Turns the shadow lamp's shadow on or off to match the tier. The shadow parameters are set once in makeLamp. */
+  private syncLampShadow(): void {
+    const view = this.shadowLampId === null ? undefined : this.lamps.get(this.shadowLampId);
+    if (view) view.light.castShadow = this.profile?.lampShadows ?? false;
   }
 
   /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */
@@ -328,11 +338,13 @@ export class LevelWorld {
         if (loaded && token === this.loadToken) this.applyKit(loaded);
       });
 
+    this.shadowLampId = pickShadowLamp(config);
     for (const cfg of config.lights) {
       const view = this.makeLamp(cfg);
       this.lamps.set(cfg.id, view);
       this.root.add(view.group);
     }
+    this.syncLampShadow();
     for (const cfg of config.casters) {
       const group = new Group();
       this.casterGroups.set(cfg.id, group);
@@ -586,6 +598,7 @@ export class LevelWorld {
     this.forges.length = 0;
     this.consoles.length = 0;
     this.lamps.clear();
+    this.shadowLampId = null;
     this.casterGroups.clear();
     this.casterKeys.clear();
     this.exit = null;
@@ -640,14 +653,16 @@ export class LevelWorld {
 
   private makeLamp(cfg: LightConfig): LampView {
     const group = new Group();
+    // The shadow lamp must never sit inside its own occluder, so its pole and head never cast.
+    const shadowLamp = cfg.id === this.shadowLampId;
     const pole = new Mesh(new CylinderGeometry(0.06, 0.08, 1, 8), lampMat);
-    pole.castShadow = true;
+    pole.castShadow = !shadowLamp;
     const lampColor = new Color(cfg.color);
     const head = new Mesh(
       new BoxGeometry(0.34, 0.18, 0.34),
       new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
     );
-    head.castShadow = true;
+    head.castShadow = !shadowLamp;
     let beam: Mesh | null = null;
     let light: PointLight | SpotLight;
     let target: Object3D | null = null;
@@ -664,6 +679,15 @@ export class LevelWorld {
       group.add(beam);
     } else {
       light = new PointLight(new Color(cfg.color), cfg.intensity * 55, cfg.range, 2);
+    }
+    if (shadowLamp) {
+      // Set once; applyProfile only toggles castShadow. A spotlight derives its shadow camera angle from the cone.
+      light.shadow.mapSize.set(LAMP_SHADOW.mapSize, LAMP_SHADOW.mapSize);
+      light.shadow.bias = LAMP_SHADOW.bias;
+      light.shadow.normalBias = LAMP_SHADOW.normalBias;
+      light.shadow.radius = LAMP_SHADOW.radius;
+      light.shadow.camera.near = 0.1;
+      light.shadow.camera.far = cfg.type === 'spotlight' ? cfg.range : Math.max(cfg.range, 10);
     }
     const glow = createBeam(new Color(cfg.color));
     group.add(pole, head, light, glow.cone, glow.halo);
