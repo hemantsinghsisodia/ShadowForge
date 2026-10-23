@@ -41,7 +41,7 @@ import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { levelBounds } from './CavernLayout';
-import { buildDressing, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
+import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
 
@@ -85,6 +85,7 @@ export class LevelWorld {
   private underLight: DirectionalLight | null = null;
   private config: LevelConfig | null = null;
   private dressing: Group | null = null;
+  private rims: Group | null = null;
   private pillars: Mesh[] = [];
   private bounds: RoomBounds | null = null;
   private accent = new Color(0x5ce1ff);
@@ -138,7 +139,10 @@ export class LevelWorld {
       this.scene.environment = null;
       lab.applyEnv(null);
     }
-    if (detailChanged && this.bounds) this.mountDressing();
+    if (detailChanged && this.bounds) {
+      this.mountDressing();
+      this.mountRims();
+    }
     this.cavern.setDetail(profile.cavern, profile.embers);
   }
 
@@ -229,10 +233,14 @@ export class LevelWorld {
     this.mountDressing();
     const token = ++this.loadToken;
     const forge = forgeKit();
-    if (forge) this.cavern.setKit(forge);
-    else
+    if (forge) {
+      this.cavern.setKit(forge);
+      this.mountRims();
+    } else
       void loadForgeKit().then((loaded) => {
-        if (loaded) this.cavern.setKit(loaded);
+        if (!loaded) return;
+        this.cavern.setKit(loaded);
+        if (token === this.loadToken) this.mountRims();
       });
     const kit = envKit();
     if (kit) this.applyKit(kit);
@@ -474,6 +482,7 @@ export class LevelWorld {
       disposeObject(this.dressing);
       this.dressing = null;
     }
+    this.clearRims();
     for (const child of [...this.root.children]) {
       if (child === this.guides || child === this.solidGroup) continue;
       this.root.remove(child);
@@ -642,6 +651,27 @@ export class LevelWorld {
     this.dressing.traverse((child) => {
       if (child.userData.pillar) this.pillars.push(child as Mesh);
     });
+  }
+
+  /** Slab-edge lips with accent-tinted trim: high dressing detail and a loaded forge kit only. Rebuilt on detail and kit changes. */
+  private mountRims(): void {
+    this.clearRims();
+    const forge = forgeKit();
+    if (!this.config || !forge || this.dressingDetail !== 'high') return;
+    try {
+      this.rims = buildForgeRims(forge, this.config.platforms, this.accent);
+    } catch (error) {
+      console.error('[ForgeKit] failed to build the slab rims; leaving the slab edges bare.', error);
+    }
+    if (this.rims) this.root.add(this.rims);
+  }
+
+  /** Disposes the merged rim geometry and the per-level trim clone; the kit's own resources are skipped. */
+  private clearRims(): void {
+    if (!this.rims) return;
+    this.root.remove(this.rims);
+    disposeObject(this.rims);
+    this.rims = null;
   }
 
   /** Hide a pillar that sits between the camera and the player, so it cannot fill the screen. */

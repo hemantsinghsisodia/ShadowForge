@@ -15,7 +15,8 @@ import { ABYSS_Y } from './ForgePalette';
  *  - Beam (SHF_Structure_Beam): X -1..1, 0.22 deep, 0.2 tall.          top = position.y + 0.2 * scaleY
  *  - Tray (SHF_Structure_CableTray): X -1..1, 0.22 deep, 0.095 tall.   top = position.y + 0.1 * scaleY (rounded up)
  *  - Lamp (SHF_Lamp_Industrial): 0.34 footprint, 1.78 tall.            top = position.y + 1.78 * scaleY
- *  - Floor_Edge (SHF_Floor_Edge): X -1..1, Y -0.5..0, Z -0.12..0.14. Not placed here; see exposedRims.
+ *  - Floor_Edge (SHF_Floor_Edge): X -1..1, Y -0.5..0, Z -0.12..0.14; its trim plate and amber stripe are on the -Z face
+ *    (the outer face). Not placed here; see exposedRims and LabDressing.rimPlacements.
  * Beams and trays are placed with rotationY 0 so they always run along X; their scale Y and Z stay 1.
  *
  * Safety rules, enforced by construction and by tests/cavernLayout.test.ts:
@@ -37,8 +38,8 @@ export interface Placement {
   scale: [number, number, number];
   /** World Y of the piece's highest point after scaling. */
   top: number;
-  /** 'support' pieces sit under their own slab and are exempt from rule (a); see the file header. */
-  role: 'support' | 'tower' | 'link';
+  /** 'support' pieces sit under their own slab and are exempt from rule (a); see the file header. 'rim' marks slab-edge lips (see exposedRims), which placeStructures never returns. */
+  role: 'support' | 'tower' | 'link' | 'rim';
 }
 
 export interface Rim {

@@ -1,6 +1,10 @@
-import { CylinderGeometry, Group, Matrix4, Mesh, Quaternion, Vector3 } from 'three';
+import { CylinderGeometry, Group, Matrix4, Mesh, Quaternion, Vector3, type Color, type MeshStandardMaterial } from 'three';
 import type { LevelConfig, PlatformConfig } from '../levels/LevelData';
+import { exposedRims, type Placement, type Rim } from './CavernLayout';
 import { instanceKit, KIT, type EnvKit, type KitName } from './EnvKit';
+import { bakeByMaterial } from './ForgeCavern';
+import { FORGE_KIT, type ForgeKit } from './ForgeKit';
+import { mixSrgb } from './ForgePalette';
 import type { LabMaterials } from './Materials';
 
 /** Pulls a slab box 0.01 shorter, bottom fixed, so its top sits just under the kit tile and only the sides show. */
@@ -206,4 +210,71 @@ function buildKitProps(kit: EnvKit, level: LevelConfig, pillars: [number, number
     if (mesh) group.add(mesh);
   }
   return group.children.length ? group : null;
+}
+
+/** Local Z of the body face of SHF_Floor_Edge that carries the trim (the other face is the plain back, at +0.14). */
+const EDGE_OUTER_Z = 0.12;
+/** How far the lip's outer body face stands proud of the slab side, so the two never share a plane. */
+const EDGE_PROUD = 0.02;
+/** Raises the lip so its top does not share a plane with the kit floor tile (that z-fights). Far under a pixel at play distances. */
+export const RIM_LIFT = 0.006;
+const TRIM_AMBER = 0xd98a1c;
+const TRIM_ACCENT_MIX = 0.35;
+const TRIM_EMISSIVE = 0.8;
+
+/**
+ * Placements for the Floor_Edge lips along exposed slab rims. Measured from SHADOWFORGE_EnvKit.glb: the lip
+ * is X -1..1, Y -0.5..0, Z -0.12..0.14, and its steel plate and WarningAmber stripe stand on the -Z face
+ * (z -0.1425..-0.124), the plain back on +Z. So local -Z is the outer face and is turned toward rim.outward.
+ * Scale X = len / 2 and Y = thick / 0.5 make the lip as long and as tall as the slab edge it wraps. The
+ * centre sits (0.12 - 0.02) inboard of the rim, putting the outer body face 0.02 m beyond the slab side
+ * (the trim plate a further 0.0225), and RIM_LIFT above the slab top.
+ */
+export function rimPlacements(rims: Rim[]): Placement[] {
+  return rims.map((rim) => {
+    const [nx, nz] = rim.outward;
+    const length = Math.hypot(rim.x1 - rim.x0, rim.z1 - rim.z0);
+    const inset = EDGE_OUTER_Z - EDGE_PROUD;
+    return {
+      piece: FORGE_KIT.edge,
+      position: [(rim.x0 + rim.x1) / 2 - nx * inset, rim.y + RIM_LIFT, (rim.z0 + rim.z1) / 2 - nz * inset],
+      // Local -Z maps to (-sin, -cos); the + 0 turns a -0 into 0.
+      rotationY: Math.atan2(-nx + 0, -nz + 0),
+      scale: [length / 2, rim.thick / 0.5, 1],
+      top: rim.y + RIM_LIFT,
+      role: 'rim',
+    };
+  });
+}
+
+/** The warning-amber trim pulled a third of the way toward the level accent. */
+export function rimTrimColor(accent: Color): Color {
+  return mixSrgb(TRIM_AMBER, accent.getHex(), TRIM_ACCENT_MIX);
+}
+
+/**
+ * Lips along every exposed rim of the level's floor slabs, one merged mesh per kit material. The meshes own
+ * their merged geometry and take shadows without casting them. The kit's WarningAmber material is cloned per
+ * call and tinted toward the accent, so the clone (unlike every other material here) is the level's to dispose.
+ * Null when there is nothing to build.
+ */
+export function buildForgeRims(kit: ForgeKit, platforms: PlatformConfig[], accent: Color): Group | null {
+  const meshes = bakeByMaterial(rimPlacements(exposedRims(platforms)), kit);
+  if (meshes.length === 0) return null;
+  const group = new Group();
+  group.name = 'ForgeRims';
+  for (const mesh of meshes) {
+    mesh.name = 'forge-rim';
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    const material = mesh.material as MeshStandardMaterial;
+    if (material.name.replace(/^SHF_MAT_/, '') === 'WarningAmber') {
+      const trim = material.clone();
+      trim.emissive.copy(rimTrimColor(accent));
+      trim.emissiveIntensity = TRIM_EMISSIVE;
+      mesh.material = trim;
+    }
+    group.add(mesh);
+  }
+  return group;
 }
