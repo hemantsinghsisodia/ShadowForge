@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FORGE_FRAG } from '../src/shadows/ForgeSurface';
-import { OBSIDIAN_FRAG, OBSIDIAN_VERT } from '../src/effects/Obsidian';
+import { FORGE_FRAG, FORGE_VERT } from '../src/shadows/ForgeSurface';
+import { OBSIDIAN_FRAG, OBSIDIAN_VERT, createObsidianMaterial } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
 import { EMBER_FRAG, EMBER_VERT } from '../src/effects/Embers';
 import { SPARK_FRAG, SPARK_VERT } from '../src/effects/Sparks';
@@ -89,6 +89,51 @@ describe('FORGE_FRAG charge', () => {
     expect(FORGE_FRAG).toContain('(1.0 + 1.5 * charge)');
     expect(FORGE_FRAG).toContain('uniform float scan');
     expect(FORGE_FRAG).toContain('sin(cell.y * 3.1 - scan)');
+  });
+});
+
+describe('beam shimmer shader', () => {
+  it('drifts a value noise along the cone and scales alpha by the shimmer', () => {
+    expect(BEAM_FRAG).toContain('uniform float time;');
+    expect(BEAM_FRAG).toContain('strength * 0.34');
+    expect(BEAM_FRAG).toContain('mix(0.75, 1.15,');
+    expect(BEAM_FRAG).not.toContain('0.28');
+    expect(BEAM_FRAG).toContain('vUv.y * 6.0 + time * 0.35');
+    expect(BEAM_FRAG).not.toContain('vUv.y * 6.0 - time');
+  });
+});
+
+describe.each([
+  ['OBSIDIAN', OBSIDIAN_VERT, OBSIDIAN_FRAG],
+  ['FORGE', FORGE_VERT, FORGE_FRAG],
+])('%s fog', (_name, vert, frag) => {
+  it('includes the four fog chunks', () => {
+    expect(vert).toContain('#include <fog_pars_vertex>');
+    expect(vert).toContain('#include <fog_vertex>');
+    expect(frag).toContain('#include <fog_pars_fragment>');
+    expect(frag).toContain('#include <fog_fragment>');
+  });
+
+  it('computes mvPosition before fog_vertex', () => {
+    expect(vert.indexOf('vec4 mvPosition')).toBeGreaterThan(-1);
+    expect(vert.indexOf('#include <fog_vertex>')).toBeGreaterThan(vert.indexOf('vec4 mvPosition'));
+    expect(vert.indexOf('#include <fog_pars_vertex>')).toBeLessThan(vert.indexOf('void main'));
+  });
+
+  it('fogs after gl_FragColor and before tonemapping', () => {
+    const fog = frag.indexOf('#include <fog_fragment>');
+    expect(fog).toBeGreaterThan(frag.lastIndexOf('gl_FragColor'));
+    expect(fog).toBeLessThan(frag.indexOf('#include <tonemapping_fragment>'));
+    expect(frag.indexOf('#include <fog_pars_fragment>')).toBeLessThan(frag.indexOf('void main'));
+  });
+});
+
+describe('fog on the material', () => {
+  it('obsidian takes fog and carries the fog uniforms', () => {
+    const material = createObsidianMaterial(1);
+    expect(material.fog).toBe(true);
+    for (const key of ['fogColor', 'fogDensity', 'fogNear', 'fogFar']) expect(material.uniforms[key]).toBeDefined();
+    expect(material.uniforms.rise.value).toBe(1);
   });
 });
 

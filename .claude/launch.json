@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "main-baseline",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "preview", ".superpowers/sdd/2026-10-23-visual-upgrade-phase1/main-wt", "--outDir", "dist-main", "--port", "5174", "--strictPort"],
+      "port": 5174
+    }
+  ]
+}

@@ -2,17 +2,41 @@ import {
   BoxGeometry,
   CanvasTexture,
   Color,
+  DataTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   type Mesh,
   MeshStandardMaterial,
   PMREMGenerator,
   NoColorSpace,
+  RGBAFormat,
   RepeatWrapping,
   SRGBColorSpace,
   type Texture,
+  UnsignedByteType,
   type WebGLRenderer,
 } from 'three';
+import { mulberry32 } from '../core/random';
 import { buildLabEnvScene } from './LabEnvironment';
 import { LIGHTING } from './Lighting';
+import { floorHeights, heightToNormal, metalHeights, normalStrength, stoneHeights } from './NormalMaps';
+
+/** One seed per painter, so every texture is the same on every load. */
+const SEED = {
+  floorMap: 0xf1a0,
+  metalMap: 0x3e7a,
+  roughFloor: 0x7001,
+  roughLamp: 0x7002,
+  roughStone: 0x7003,
+  floorNormal: 0xf10a,
+  metalNormal: 0x3e7b,
+  stoneNormal: 0x570e,
+};
+
+export type DetailTier = 'low' | 'medium' | 'high';
+const DETAIL_SIZE: Record<Exclude<DetailTier, 'low'>, number> = { medium: 256, high: 512 };
+const NORMAL_SCALE = 0.6;
+const NORMAL_STRENGTH = 2;
 
 /**
  * Assigns the env map to each material. Explicit maps ignore scene.environmentIntensity in r170,
@@ -50,6 +74,7 @@ function paint(width: number, height: number, draw: (ctx: CanvasRenderingContext
 }
 
 function floorMap(): CanvasTexture {
+  const rand = mulberry32(SEED.floorMap);
   return paint(256, 256, (ctx) => {
     ctx.fillStyle = '#141923';
     ctx.fillRect(0, 0, 256, 256);
@@ -69,8 +94,8 @@ function floorMap(): CanvasTexture {
     ctx.strokeRect(8, 8, 240, 240);
     ctx.globalAlpha = 1;
     for (let i = 0; i < 40; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.04})`;
-      ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+      ctx.fillStyle = `rgba(255,255,255,${rand() * 0.04})`;
+      ctx.fillRect(rand() * 256, rand() * 256, 2, 2);
     }
   });
 }
@@ -94,14 +119,15 @@ function wallMap(): CanvasTexture {
 
 /** Soft mottling only. Row shading here reads as staircase bands on tall faces. */
 function metalMap(): CanvasTexture {
+  const rand = mulberry32(SEED.metalMap);
   return paint(128, 128, (ctx) => {
     ctx.fillStyle = '#646d7c';
     ctx.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 7; i++) {
-      const x = Math.random() * 128;
-      const y = Math.random() * 128;
-      const radius = 22 + Math.random() * 26;
-      const shade = 92 + Math.floor(Math.random() * 18);
+      const x = rand() * 128;
+      const y = rand() * 128;
+      const radius = 22 + rand() * 26;
+      const shade = 92 + Math.floor(rand() * 18);
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
       gradient.addColorStop(0, `rgba(${shade},${shade + 3},${shade + 8},0.35)`);
       gradient.addColorStop(1, 'rgba(100,109,124,0)');
@@ -111,22 +137,23 @@ function metalMap(): CanvasTexture {
       ctx.fill();
     }
     for (let i = 0; i < 160; i++) {
-      const shade = 96 + Math.floor(Math.random() * 24);
+      const shade = 96 + Math.floor(rand() * 24);
       ctx.fillStyle = `rgba(${shade},${shade},${shade + 4},0.16)`;
-      ctx.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
+      ctx.fillRect(rand() * 128, rand() * 128, 1.5, 1.5);
     }
   });
 }
 
-function roughness(base: number): CanvasTexture {
+function roughness(base: number, seed: number): CanvasTexture {
+  const rand = mulberry32(seed);
   const texture = paint(64, 64, (ctx) => {
     const value = Math.floor(base * 255);
     ctx.fillStyle = `rgb(${value},${value},${value})`;
     ctx.fillRect(0, 0, 64, 64);
     for (let i = 0; i < 30; i++) {
-      const v = Math.max(0, Math.min(255, value + (Math.random() * 40 - 20)));
+      const v = Math.max(0, Math.min(255, value + (rand() * 40 - 20)));
       ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.fillRect(Math.random() * 64, Math.random() * 64, 3, 3);
+      ctx.fillRect(rand() * 64, rand() * 64, 3, 3);
     }
   });
   texture.colorSpace = NoColorSpace;
@@ -144,6 +171,21 @@ export interface LabMaterials {
   shared: Set<import('three').Material>;
   applyEnv(texture: Texture | null): void;
   setAnisotropy(max: number): void;
+  /** Low: no normal maps. Medium: 256 px. High: 512 px. Textures are built on first use and cached per size. */
+  applyDetail(tier: DetailTier): void;
+}
+
+function normalTexture(heights: Float32Array, size: number, anisotropy: number): DataTexture {
+  const texture = new DataTexture(heightToNormal(heights, size, size, normalStrength(size, NORMAL_STRENGTH)), size, size, RGBAFormat, UnsignedByteType);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = NoColorSpace;
+  texture.generateMipmaps = true;
+  texture.minFilter = LinearMipmapLinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.anisotropy = anisotropy;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 /**
@@ -186,7 +228,7 @@ export function createLabMaterials(): LabMaterials {
   const metal = metalMap();
   const floor = new MeshStandardMaterial({
     map: floorTex,
-    roughnessMap: roughness(0.72),
+    roughnessMap: roughness(0.72, SEED.roughFloor),
     color: base.floor,
     metalness: 0.45,
     roughness: 0.72,
@@ -206,14 +248,14 @@ export function createLabMaterials(): LabMaterials {
   });
   const lamp = new MeshStandardMaterial({
     map: metal,
-    roughnessMap: roughness(0.28),
+    roughnessMap: roughness(0.28, SEED.roughLamp),
     color: 0xffffff,
     metalness: 0.82,
     roughness: 0.28,
   });
   const stone = new MeshStandardMaterial({
     map: metal,
-    roughnessMap: roughness(0.48),
+    roughnessMap: roughness(0.48, SEED.roughStone),
     color: 0x6d7888,
     metalness: 0.4,
     roughness: 0.48,
@@ -221,6 +263,24 @@ export function createLabMaterials(): LabMaterials {
   const node = new MeshStandardMaterial({ color: 0x8ee9ff, emissive: 0x39d7ff, emissiveIntensity: 1.1, roughness: 0.3 });
   const nodeHot = new MeshStandardMaterial({ color: 0xffd2a1, emissive: 0xffb15a, emissiveIntensity: 1.5, roughness: 0.3 });
   const all = [floor, wall, trim, lamp, stone, node, nodeHot];
+  let anisotropy = 4;
+  const normals = new Map<string, DataTexture>();
+  const normalFor = (kind: 'floor' | 'metal' | 'stone', size: number): DataTexture => {
+    const key = `${kind}:${size}`;
+    let texture = normals.get(key);
+    if (!texture) {
+      const heights =
+        kind === 'floor'
+          ? floorHeights(size, SEED.floorNormal)
+          : kind === 'metal'
+            ? metalHeights(size, SEED.metalNormal)
+            : stoneHeights(size, SEED.stoneNormal);
+      texture = normalTexture(heights, size, anisotropy);
+      normals.set(key, texture);
+    }
+    texture.anisotropy = anisotropy;
+    return texture;
+  };
   return {
     floor,
     wall,
@@ -235,6 +295,7 @@ export function createLabMaterials(): LabMaterials {
     },
     setAnisotropy(max) {
       const value = Math.min(8, Math.max(1, max));
+      anisotropy = value;
       const seen = new Set<Texture>();
       for (const material of all) {
         for (const tex of [material.map, material.roughnessMap]) {
@@ -242,6 +303,24 @@ export function createLabMaterials(): LabMaterials {
           seen.add(tex);
           tex.anisotropy = value;
         }
+      }
+      for (const tex of normals.values()) tex.anisotropy = value;
+    },
+    applyDetail(tier) {
+      const size = tier === 'low' ? 0 : DETAIL_SIZE[tier];
+      const targets: [MeshStandardMaterial, 'floor' | 'metal' | 'stone'][] = [
+        [floor, 'floor'],
+        [lamp, 'metal'],
+        [stone, 'stone'],
+      ];
+      for (const [material, kind] of targets) {
+        const next = size ? normalFor(kind, size) : null;
+        if (next && material.map) next.repeat.copy(material.map.repeat);
+        const presenceChanged = (material.normalMap === null) !== (next === null);
+        material.normalMap = next;
+        material.normalScale.set(NORMAL_SCALE, NORMAL_SCALE);
+        // Adding or removing a map recompiles the shader; swapping one size for another does not.
+        if (presenceChanged) material.needsUpdate = true;
       }
     },
   };

@@ -251,6 +251,13 @@ describe('ForgeSurface charge', () => {
     expect(forge.material.uniforms.scan.value).toBeCloseTo(0.2 + 0.4, 10);
   });
 
+  it('takes the cavern fog', () => {
+    const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
+    expect(forge.material.fog).toBe(true);
+    expect(forge.material.uniforms.fogColor).toBeDefined();
+    expect(forge.material.uniforms.charge.value).toBe(0);
+  });
+
   it('starts uncharged and writes the charge uniform', () => {
     const forge = new ForgeSurface(surface([1, 0, 0], [0, 0, 1]));
     expect(forge.material.uniforms.charge.value).toBe(0);

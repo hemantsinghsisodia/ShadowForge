@@ -27,7 +27,7 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
+import { aimBeam, createBeam, setBeamTime, type BeamView } from '../effects/LightBeams';
 import { RISE_DELAY, collapseTimeFor, riseProgress } from '../effects/ForgeTimeline';
 import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
@@ -43,6 +43,7 @@ import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
 import { levelAtmosphere, moltenPulse } from './ForgePalette';
 import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
 import { levelBounds, sunShadowFrame } from './CavernLayout';
+import { LAMP_SHADOW, disposeLightShadows, pickShadowLamp, releaseLampShadow } from './LampShadow';
 import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
 import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
@@ -85,6 +86,7 @@ export class LevelWorld {
   readonly guideMeshes: Mesh[] = [];
   readonly consoles: { id: string; surfaceId: string; group: Group }[] = [];
   private readonly lamps = new Map<string, LampView>();
+  private menuBeam: BeamView | null = null;
   private readonly casterGroups = new Map<string, Group>();
   private readonly casterKeys = new Map<string, string>();
   private readonly guides = new Group();
@@ -105,6 +107,8 @@ export class LevelWorld {
   /** The one light that swells at the plate during a forge. Medium / high cavern tiers only; never added or removed per frame. */
   private forgeLight: PointLight | null = null;
   private readonly forgePoint = { x: 0, y: 0, z: 0 };
+  /** Id of the one lamp that may cast a real shadow (High only); chosen at load. */
+  private shadowLampId: string | null = null;
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
   private gl: WebGLRenderer | null = null;
@@ -165,12 +169,24 @@ export class LevelWorld {
       this.scene.environment = null;
       lab.applyEnv(null);
     }
+    // Before mountDressing: fallback pillars clone `stone`, so it must already hold this tier's normal map.
+    lab.applyDetail(profile.cavern);
     if (detailChanged && this.bounds) {
       this.mountDressing();
       this.mountRims();
     }
     this.cavern.setDetail(profile.cavern, profile.embers);
     this.syncForgeLight();
+    this.syncLampShadow();
+  }
+
+  /** Turns the shadow lamp's shadow on or off to match the tier. The shadow parameters are set once in makeLamp. */
+  private syncLampShadow(): void {
+    const view = this.shadowLampId === null ? undefined : this.lamps.get(this.shadowLampId);
+    if (!view) return;
+    const want = this.profile?.lampShadows ?? false;
+    if (view.light.castShadow && !want) releaseLampShadow(view.light);
+    view.light.castShadow = want;
   }
 
   /** Adds or removes the forge light to match the tier. Runs on load and on a tier change only. */
@@ -328,11 +344,13 @@ export class LevelWorld {
         if (loaded && token === this.loadToken) this.applyKit(loaded);
       });
 
+    this.shadowLampId = pickShadowLamp(config);
     for (const cfg of config.lights) {
       const view = this.makeLamp(cfg);
       this.lamps.set(cfg.id, view);
       this.root.add(view.group);
     }
+    this.syncLampShadow();
     for (const cfg of config.casters) {
       const group = new Group();
       this.casterGroups.set(cfg.id, group);
@@ -417,6 +435,11 @@ export class LevelWorld {
       view.pole.position.y = -view.pole.scale.y / 2;
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
+      if (cfg.id === this.shadowLampId) {
+        // A lamp that is off skips its shadow pass (toggling castShadow would recompile materials); one refresh when it comes back.
+        if (volume.enabled && !view.light.shadow.autoUpdate) view.light.shadow.needsUpdate = true;
+        view.light.shadow.autoUpdate = volume.enabled;
+      }
       const headMat = view.head.material as MeshBasicMaterial;
       headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 4.0 : 0.12);
       const dir =
@@ -515,10 +538,17 @@ export class LevelWorld {
     }
     this.menu.rotation.y = Math.sin(this.time * 0.15) * 0.18;
     for (const forge of this.forges) forge.setTime(this.time);
+    this.lamps.forEach(this.tickBeam);
+    if (this.menuBeam) setBeamTime(this.menuBeam, this.time);
     this.solidDt = dt;
     this.solidViews.forEach(this.tickSolid);
     if (this.prewarm && this.root.visible && --this.prewarmFrames <= 0) this.dropPrewarm();
   }
+
+  /** Bound once so the per-frame `forEach` allocates nothing. */
+  private readonly tickBeam = (view: LampView): void => {
+    setBeamTime(view.glow, this.time);
+  };
 
   /** Bound once so the per-frame `forEach` allocates nothing. */
   private readonly tickSolid = (view: SolidView, id: string): void => {
@@ -585,7 +615,11 @@ export class LevelWorld {
     }
     this.forges.length = 0;
     this.consoles.length = 0;
+    // three never frees a light's shadow map when the light is removed, so free the shadow lamp's and the sun's here.
+    const shadowView = this.shadowLampId === null ? undefined : this.lamps.get(this.shadowLampId);
+    disposeLightShadows([shadowView?.light, this.sun]);
     this.lamps.clear();
+    this.shadowLampId = null;
     this.casterGroups.clear();
     this.casterKeys.clear();
     this.exit = null;
@@ -640,14 +674,16 @@ export class LevelWorld {
 
   private makeLamp(cfg: LightConfig): LampView {
     const group = new Group();
+    // The shadow lamp must never sit inside its own occluder, so its pole and head never cast.
+    const shadowLamp = cfg.id === this.shadowLampId;
     const pole = new Mesh(new CylinderGeometry(0.06, 0.08, 1, 8), lampMat);
-    pole.castShadow = true;
+    pole.castShadow = !shadowLamp;
     const lampColor = new Color(cfg.color);
     const head = new Mesh(
       new BoxGeometry(0.34, 0.18, 0.34),
       new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
     );
-    head.castShadow = true;
+    head.castShadow = !shadowLamp;
     let beam: Mesh | null = null;
     let light: PointLight | SpotLight;
     let target: Object3D | null = null;
@@ -664,6 +700,15 @@ export class LevelWorld {
       group.add(beam);
     } else {
       light = new PointLight(new Color(cfg.color), cfg.intensity * 55, cfg.range, 2);
+    }
+    if (shadowLamp) {
+      // Set once; applyProfile only toggles castShadow. A spotlight derives its shadow camera angle from the cone.
+      light.shadow.mapSize.set(LAMP_SHADOW.mapSize, LAMP_SHADOW.mapSize);
+      light.shadow.bias = LAMP_SHADOW.bias;
+      light.shadow.normalBias = LAMP_SHADOW.normalBias;
+      light.shadow.radius = LAMP_SHADOW.radius;
+      // The shadow camera's far plane is not set here: three rewrites it from light.distance every frame.
+      light.shadow.camera.near = 0.1;
     }
     const glow = createBeam(new Color(cfg.color));
     group.add(pole, head, light, glow.cone, glow.halo);
@@ -848,6 +893,7 @@ export class LevelWorld {
     const glow = createBeam(new Color(0xffb15a));
     rig.add(lamp, light, glow.cone, glow.halo);
     aimBeam(glow, new Vector3(3.15, -2.35, -0.35), 3.8, 1);
+    this.menuBeam = glow;
     const underglow = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
     underglow.position.set(3, -12, 4);
     underglow.castShadow = false;

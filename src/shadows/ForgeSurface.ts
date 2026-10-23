@@ -8,17 +8,22 @@ import {
   NoColorSpace,
   RGBAFormat,
   ShaderMaterial,
+  UniformsLib,
+  UniformsUtils,
   UnsignedByteType,
   Vector2,
   Vector3,
 } from 'three';
 import type { SurfaceDef } from './types';
 
-const VERT = `
+export const FORGE_VERT = `
 varying vec2 vUv;
+#include <fog_pars_vertex>
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
 }
 `;
 
@@ -32,6 +37,7 @@ uniform float charge;
 uniform float scan;
 uniform vec3 color;
 varying vec2 vUv;
+#include <fog_pars_fragment>
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -77,6 +83,7 @@ void main() {
   float alpha = 0.18 + preview * 0.45 + solid * 0.82 + pedge * 0.4 + grid * 0.1 + ring * 0.5;
   alpha *= mix(1.0, 0.25, broken);
   gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+  #include <fog_fragment>
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -147,7 +154,9 @@ export class ForgeSurface {
     this.texture.colorSpace = NoColorSpace;
     this.texture.needsUpdate = true;
     this.material = new ShaderMaterial({
+      // Spread a clone of the fog uniforms rather than UniformsUtils.merge, which would clone maskMap's texture.
       uniforms: {
+        ...UniformsUtils.clone(UniformsLib.fog),
         maskMap: { value: this.texture },
         cells: { value: new Vector2(cols, rows) },
         time: { value: 0 },
@@ -156,11 +165,12 @@ export class ForgeSurface {
         scan: { value: 0 },
         color: { value: new Vector3(0.35, 0.88, 1) },
       },
-      vertexShader: VERT,
+      vertexShader: FORGE_VERT,
       fragmentShader: FORGE_FRAG,
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
+      fog: true,
     });
     this.mesh = new Mesh(geometry, this.material);
     this.mesh.frustumCulled = false;
