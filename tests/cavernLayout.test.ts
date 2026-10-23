@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LEVELS } from '../src/levels';
 import type { PlatformConfig } from '../src/levels/LevelData';
-import { corridor, exposedRims, levelBounds, placeStructures, type Placement } from '../src/world/CavernLayout';
+import { CAMERA_BAND, CAMERA_REACH, corridor, exposedRims, levelBounds, placeStructures, type Placement } from '../src/world/CavernLayout';
 import { ABYSS_Y } from '../src/world/ForgePalette';
 
 const SEEDS = [0, 1, 7, 12345];
@@ -18,6 +18,24 @@ const slab = (x: number, z: number, w = 4, d = 4, y = -0.25, h = 0.5): PlatformC
 const total = (rims: ReturnType<typeof exposedRims>) => rims.reduce((sum, r) => sum + Math.hypot(r.x1 - r.x0, r.z1 - r.z0), 0);
 
 describe('CavernLayout', () => {
+  it('keeps the camera band wider than the camera reach', () => {
+    expect(CAMERA_REACH).toBe(6.2);
+    expect(CAMERA_BAND).toBeGreaterThan(CAMERA_REACH);
+  });
+
+  it('emits a single cross beam at the midpoint of a slab narrower than 0.3 m between its beam lines', () => {
+    const bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 };
+    // Depth 1.3 less the 0.6 m insets leaves 0.1 m between z0 and z1.
+    const beams = placeStructures(bounds, [slab(0, 0, 4, 1.3)], 'high', 1).filter((p) => p.role === 'support' && p.piece === 'SHF_Structure_Beam');
+    expect(beams).toHaveLength(1);
+    expect(beams[0].position[2]).toBeCloseTo(0, 9);
+  });
+
+  it('still emits two cross beams on a normal slab', () => {
+    const bounds = { minX: -2, maxX: 2, minZ: -2, maxZ: 2 };
+    expect(placeStructures(bounds, [slab(0, 0)], 'high', 1).filter((p) => p.role === 'support' && p.piece === 'SHF_Structure_Beam')).toHaveLength(2);
+  });
+
   for (const level of LEVELS) {
     const bounds = levelBounds(level.platforms);
     const { midZ, halfDepth } = corridor(bounds);
@@ -29,7 +47,7 @@ describe('CavernLayout', () => {
           for (const detail of ['high', 'medium'] as const) {
             for (const p of placeStructures(bounds, slabs, detail, seed)) {
               if (p.role === 'support') continue;
-              expect(Math.abs(p.position[2] - midZ)).toBeGreaterThanOrEqual(halfDepth + 7);
+              expect(Math.abs(p.position[2] - midZ)).toBeGreaterThanOrEqual(halfDepth + CAMERA_BAND);
             }
           }
         }

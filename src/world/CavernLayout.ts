@@ -20,7 +20,7 @@ import { ABYSS_Y } from './ForgePalette';
  * Beams and trays are placed with rotationY 0 so they always run along X; their scale Y and Z stay 1.
  *
  * Safety rules, enforced by construction and by tests/cavernLayout.test.ts:
- *  (a) every placement that is not a 'support' has |z - midZ| >= halfDepth + 7 (tests also check top > -0.6 pieces);
+ *  (a) every placement that is not a 'support' has |z - midZ| >= halfDepth + CAMERA_BAND (the tests check every non-support piece);
  *  (b) under-slab support tops are <= their slab's bottom;
  *  (c) nothing above the floor spans the corridor footprint [minZ, maxZ].
  * Rule (a) exists to keep pieces out from between the camera and the player. Pieces with role 'support'
@@ -54,6 +54,11 @@ export interface Rim {
   /** Unit XZ normal pointing away from the slab. */
   outward: [number, number];
 }
+
+/** Camera distance in player/CameraRig. */
+export const CAMERA_REACH = 6.2;
+/** Half-width of the keep-clear band either side of the corridor edge. Must exceed CAMERA_REACH, or pieces can sit between the camera and the player. */
+export const CAMERA_BAND = 7;
 
 const PILLAR_H = 3.08;
 const BEAM_H = 0.2;
@@ -155,7 +160,9 @@ function supports(slab: PlatformConfig, others: PlatformConfig[], rand: () => nu
   const span = x1 - x0;
   const y = bottom - 0.4;
   if (full && span >= 0.5) {
-    for (const z of [z0, z1]) {
+    // On a slab too narrow for two distinct beam lines, one beam at their midpoint replaces the pair.
+    const beamZs = z1 - z0 < 0.3 ? [(z0 + z1) / 2] : [z0, z1];
+    for (const z of beamZs) {
       if (pierces(slab.position[0], z, span / 2, BEAM_HALF_Z, y + BEAM_H, others)) continue;
       out.push({
         piece: FORGE_KIT.beam,

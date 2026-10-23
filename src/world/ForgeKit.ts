@@ -27,6 +27,7 @@ export function forgeRetint(material: MeshStandardMaterial): void {
   switch (material.name.replace(/^SHF_MAT_/, '')) {
     case 'CyanEmission':
       material.emissive.setHex(FORGE.glow);
+      material.emissiveIntensity = 1.6; // above the 1.2 bloom threshold
       break;
     case 'WhiteEmission':
       material.emissive.setHex(0xffc890);

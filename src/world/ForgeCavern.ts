@@ -129,7 +129,10 @@ export function bakeByMaterial(placements: Placement[], kit: Pick<ForgeKit, 'pro
     });
     const merged = mergeGeometries(prepared);
     for (const geometry of prepared) geometry.dispose();
-    if (!merged) continue;
+    if (!merged) {
+      console.warn('[ForgeCavern] mergeGeometries failed for a kit material; its structures are skipped.');
+      continue;
+    }
     const mesh = new Mesh(merged, material);
     mesh.name = 'structures';
     mesh.castShadow = false;

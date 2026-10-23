@@ -61,7 +61,7 @@ void main() {
   float age = time - wave;
   float ring = wave > 0.0 ? (1.0 - smoothstep(0.0, 0.45, abs(length(vUv - 0.5) * 2.2 - age * 1.6))) : 0.0;
   float dissolve = hash(floor(cell * 2.0));
-  float broken = solid * smoothstep(stab + 0.05, stab - 0.15, dissolve);
+  float broken = solid * (1.0 - smoothstep(stab - 0.15, stab + 0.05, dissolve));
   vec3 base = vec3(0.012, 0.025, 0.04);
   vec3 previewCol = color * (0.12 + 0.28 * scan * ripple) + color * pedge * 2.6 + color * flow * 0.08;
   vec3 hot = mix(vec3(1.0, 0.22, 0.12), color, clamp(stab, 0.0, 1.0));

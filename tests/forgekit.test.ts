@@ -13,6 +13,12 @@ describe('forgeRetint', () => {
     expect(m.emissive.getHex()).toBe(FORGE.glow);
   });
 
+  it('boosts the cyan emission to 1.6 so it blooms past the 1.2 threshold', () => {
+    const m = named('SHF_MAT_CyanEmission');
+    forgeRetint(m);
+    expect(m.emissiveIntensity).toBe(1.6);
+  });
+
   it('turns the white emission warm at intensity 2', () => {
     const m = named('SHF_MAT_WhiteEmission');
     forgeRetint(m);

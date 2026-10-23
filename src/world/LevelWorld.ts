@@ -120,6 +120,10 @@ export class LevelWorld {
     this.gl = renderer;
     lab.setAnisotropy(renderer.capabilities.getMaxAnisotropy());
     this.ensureEnv();
+    // Load the forge kit now so the menu has towers on first boot; load() calls it again (cached, idempotent).
+    void loadForgeKit().then((kit) => {
+      if (kit) this.cavern.setKit(kit);
+    });
   }
 
   applyProfile(profile: QualityProfile): void {
