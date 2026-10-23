@@ -11,21 +11,23 @@ import {
 const CAP = 360;
 const DUST_MAX = 120;
 
-const VERT = `
+export const PARTICLE_VERT = `
+uniform float uScale;
+attribute vec3 aColor;
 attribute float size;
 attribute float alpha;
 varying vec3 vColor;
 varying float vAlpha;
 void main() {
-  vColor = color;
+  vColor = aColor;
   vAlpha = alpha;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = size * (80.0 / max(1.0, -mv.z));
+  gl_PointSize = min(64.0, size * uScale * 80.0 / max(1.0, -mv.z));
   gl_Position = projectionMatrix * mv;
 }
 `;
 
-const FRAG = `
+export const PARTICLE_FRAG = `
 precision highp float;
 varying vec3 vColor;
 varying float vAlpha;
@@ -34,10 +36,16 @@ void main() {
   if (d > 0.5 || vAlpha < 0.01) discard;
   float soft = smoothstep(0.5, 0.05, d);
   gl_FragColor = vec4(vColor, soft * vAlpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `;
 
 export type BurstKind = 'spark' | 'ember' | 'shard';
+
+/** Colour multipliers that push bursts past the bloom threshold; dust stays below it. */
+export const KIND_INTENSITY: Record<BurstKind, number> = { spark: 3.0, shard: 2.5, ember: 2.0 };
+export const DUST_INTENSITY = 0.6;
 
 /** Round additive motes: forge sparks, embers, collapse shards and beam dust. */
 export class ParticleManager {
@@ -51,8 +59,12 @@ export class ParticleManager {
   private readonly baseSize: Float32Array;
   private readonly geometry: BufferGeometry;
   private readonly points: Points;
+  private readonly uniforms = { uScale: { value: 1 } };
   private cursor = 0;
   private dust = 0;
+  private hiAlive = 0;
+  private colorDirty = false;
+  private fullUpload = false;
   private focusX = 0;
   private focusY = 1;
   private focusZ = 0;
@@ -72,13 +84,13 @@ export class ParticleManager {
     for (let i = 1; i < CAP * 3; i += 3) this.positions[i] = -999;
     this.geometry = new BufferGeometry();
     this.geometry.setAttribute('position', new BufferAttribute(this.positions, 3));
-    this.geometry.setAttribute('color', new BufferAttribute(this.colors, 3));
+    this.geometry.setAttribute('aColor', new BufferAttribute(this.colors, 3));
     this.geometry.setAttribute('size', new BufferAttribute(this.sizes, 1));
     this.geometry.setAttribute('alpha', new BufferAttribute(this.alphas, 1));
     const material = new ShaderMaterial({
-      uniforms: {},
-      vertexShader: VERT,
-      fragmentShader: FRAG,
+      uniforms: this.uniforms,
+      vertexShader: PARTICLE_VERT,
+      fragmentShader: PARTICLE_FRAG,
       transparent: true,
       depthWrite: false,
       blending: AdditiveBlending,
@@ -96,53 +108,56 @@ export class ParticleManager {
     this.dust = Math.max(0, Math.min(DUST_MAX, count));
   }
 
+  setPixelRatio(dpr: number): void {
+    this.uniforms.uScale.value = dpr;
+  }
+
   setFocus(x: number, y: number, z: number): void {
     this.focusX = x;
     this.focusY = y;
     this.focusZ = z;
   }
 
-  burst(x: number, y: number, z: number, count: number, hex: number, kind: BurstKind = 'spark'): void {
+  burst(
+    x: number,
+    y: number,
+    z: number,
+    count: number,
+    hex: number,
+    kind: BurstKind = 'spark',
+    intensity: number = KIND_INTENSITY[kind],
+  ): void {
     const color = new Color(hex);
-    const room = CAP - DUST_MAX;
-    const n = Math.min(count, this.budget, room);
-    for (let i = 0; i < n; i++) {
-      const index = this.cursor % room;
-      this.cursor++;
-      const o = index * 3;
-      this.positions[o] = x + (Math.random() - 0.5) * 0.5;
-      this.positions[o + 1] = y + Math.random() * 0.25;
-      this.positions[o + 2] = z + (Math.random() - 0.5) * 0.5;
-      if (kind === 'shard') {
-        this.velocities[o] = (Math.random() - 0.5) * 3.4;
-        this.velocities[o + 1] = 0.8 + Math.random() * 2.2;
-        this.velocities[o + 2] = (Math.random() - 0.5) * 3.4;
-        this.baseSize[index] = 7 + Math.random() * 6;
-        this.maxLife[index] = 0.35 + Math.random() * 0.35;
-      } else if (kind === 'ember') {
-        this.velocities[o] = (Math.random() - 0.5) * 0.4;
-        this.velocities[o + 1] = 0.25 + Math.random() * 0.55;
-        this.velocities[o + 2] = (Math.random() - 0.5) * 0.4;
-        this.baseSize[index] = 4 + Math.random() * 4;
-        this.maxLife[index] = 0.8 + Math.random() * 0.7;
-      } else {
-        this.velocities[o] = (Math.random() - 0.5) * 1.8;
-        this.velocities[o + 1] = 0.7 + Math.random() * 1.6;
-        this.velocities[o + 2] = (Math.random() - 0.5) * 1.8;
-        this.baseSize[index] = 5 + Math.random() * 5;
-        this.maxLife[index] = 0.4 + Math.random() * 0.45;
+    const n = Math.min(count, this.budget, CAP - DUST_MAX);
+    for (let i = 0; i < n; i++) this.spawn(x, y, z, color, kind, intensity);
+  }
+
+  /** Spawns `perPoint` particles at each packed xyz point, never exceeding the budget. */
+  burstPoints(
+    points: Float32Array,
+    perPoint: number,
+    hex: number,
+    kind: BurstKind,
+    dir?: [number, number, number],
+  ): void {
+    const color = new Color(hex);
+    const intensity = KIND_INTENSITY[kind];
+    let left = Math.min(this.budget, CAP - DUST_MAX);
+    for (let p = 0; p + 2 < points.length && left > 0; p += 3) {
+      for (let k = 0; k < perPoint && left > 0; k++, left--) {
+        this.spawn(points[p], points[p + 1], points[p + 2], color, kind, intensity, dir);
       }
-      this.colors[o] = color.r;
-      this.colors[o + 1] = color.g;
-      this.colors[o + 2] = color.b;
-      this.life[index] = this.maxLife[index];
     }
-    (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
   }
 
   update(dt: number): void {
     const room = CAP - DUST_MAX;
-    for (let i = 0; i < room; i++) this.step(i, dt, 2.4);
+    let hi = 0;
+    for (let i = 0; i < room; i++) {
+      if (this.life[i] > 0) hi = i + 1;
+      this.step(i, dt, 2.4);
+    }
+    this.hiAlive = hi;
     const dustStart = CAP - this.dust;
     for (let i = dustStart; i < CAP; i++) {
       if (this.life[i] <= 0) this.seedDust(i);
@@ -153,12 +168,74 @@ export class ParticleManager {
         this.life[i] = 0;
         this.positions[i * 3 + 1] = -999;
         this.alphas[i] = 0;
+        this.fullUpload = true;
       }
     }
-    (this.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
-    (this.geometry.getAttribute('color') as BufferAttribute).needsUpdate = true;
-    (this.geometry.getAttribute('size') as BufferAttribute).needsUpdate = true;
-    (this.geometry.getAttribute('alpha') as BufferAttribute).needsUpdate = true;
+    this.upload(dustStart);
+  }
+
+  private upload(dustStart: number): void {
+    if (this.hiAlive === 0 && this.dust === 0 && !this.fullUpload) return;
+    for (const name of ['position', 'size', 'alpha']) {
+      const attr = this.geometry.getAttribute(name) as BufferAttribute;
+      attr.clearUpdateRanges();
+      if (!this.fullUpload) {
+        if (this.hiAlive > 0) attr.addUpdateRange(0, this.hiAlive * attr.itemSize);
+        if (this.dust > 0) attr.addUpdateRange(dustStart * attr.itemSize, this.dust * attr.itemSize);
+      }
+      attr.needsUpdate = true;
+    }
+    if (this.colorDirty || this.fullUpload) {
+      (this.geometry.getAttribute('aColor') as BufferAttribute).needsUpdate = true;
+      this.colorDirty = false;
+    }
+    this.fullUpload = false;
+  }
+
+  private spawn(
+    x: number,
+    y: number,
+    z: number,
+    color: Color,
+    kind: BurstKind,
+    intensity: number,
+    dir?: [number, number, number],
+  ): void {
+    const index = this.cursor % (CAP - DUST_MAX);
+    this.cursor++;
+    const o = index * 3;
+    this.positions[o] = x + (Math.random() - 0.5) * 0.5;
+    this.positions[o + 1] = y + Math.random() * 0.25;
+    this.positions[o + 2] = z + (Math.random() - 0.5) * 0.5;
+    if (kind === 'shard') {
+      this.velocities[o] = (Math.random() - 0.5) * 3.4;
+      this.velocities[o + 1] = 0.8 + Math.random() * 2.2;
+      this.velocities[o + 2] = (Math.random() - 0.5) * 3.4;
+      this.baseSize[index] = 7 + Math.random() * 6;
+      this.maxLife[index] = 0.35 + Math.random() * 0.35;
+    } else if (kind === 'ember') {
+      this.velocities[o] = (Math.random() - 0.5) * 0.4;
+      this.velocities[o + 1] = 0.25 + Math.random() * 0.55;
+      this.velocities[o + 2] = (Math.random() - 0.5) * 0.4;
+      this.baseSize[index] = 4 + Math.random() * 4;
+      this.maxLife[index] = 0.8 + Math.random() * 0.7;
+    } else {
+      this.velocities[o] = (Math.random() - 0.5) * 1.8;
+      this.velocities[o + 1] = 0.7 + Math.random() * 1.6;
+      this.velocities[o + 2] = (Math.random() - 0.5) * 1.8;
+      this.baseSize[index] = 5 + Math.random() * 5;
+      this.maxLife[index] = 0.4 + Math.random() * 0.45;
+    }
+    if (dir) {
+      this.velocities[o] += dir[0] * 1.6;
+      this.velocities[o + 1] += dir[1] * 1.6;
+      this.velocities[o + 2] += dir[2] * 1.6;
+    }
+    this.colors[o] = color.r * intensity;
+    this.colors[o + 1] = color.g * intensity;
+    this.colors[o + 2] = color.b * intensity;
+    this.life[index] = this.maxLife[index];
+    this.colorDirty = true;
   }
 
   private step(index: number, dt: number, gravity: number): void {
@@ -190,9 +267,10 @@ export class ParticleManager {
     this.velocities[o] = (Math.random() - 0.5) * 0.2;
     this.velocities[o + 1] = 0.04 + Math.random() * 0.16;
     this.velocities[o + 2] = (Math.random() - 0.5) * 0.2;
-    this.colors[o] = 0.75;
-    this.colors[o + 1] = 0.88;
-    this.colors[o + 2] = 1;
+    this.colors[o] = 0.75 * DUST_INTENSITY;
+    this.colors[o + 1] = 0.88 * DUST_INTENSITY;
+    this.colors[o + 2] = DUST_INTENSITY;
+    this.colorDirty = true;
     this.maxLife[index] = 2.5 + Math.random() * 2.5;
     this.life[index] = this.maxLife[index];
     this.baseSize[index] = 3 + Math.random() * 4;

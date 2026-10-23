@@ -676,6 +676,7 @@ export class Game {
     this.world.applyShadowSize(profile.shadowMapSize);
     this.particles.setBudget(profile.particles);
     this.particles.setDust(profile.dust);
+    this.particles.setPixelRatio(this.renderer.renderer.getPixelRatio());
     this.player.setLamp(profile.playerLight);
     this.resize();
   }
