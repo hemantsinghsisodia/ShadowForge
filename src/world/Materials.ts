@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   CanvasTexture,
   Color,
+  type Mesh,
   MeshStandardMaterial,
   PMREMGenerator,
   NoColorSpace,
@@ -10,7 +11,20 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { buildLabEnvScene } from './LabEnvironment';
+import { LIGHTING } from './Lighting';
+
+/**
+ * Assigns the env map to each material. Explicit maps ignore scene.environmentIntensity in r170,
+ * so the intensity is set per material; clearing the map restores the default of 1.
+ */
+export function setLabEnv(materials: Iterable<MeshStandardMaterial>, texture: Texture | null): void {
+  for (const material of materials) {
+    material.envMap = texture;
+    material.envMapIntensity = texture ? LIGHTING.env : 1;
+    material.needsUpdate = true;
+  }
+}
 
 export const LEVEL_ACCENTS = [
   0x5ce1ff, 0xffb15a, 0x9b8cff, 0x3ee0c8, 0x7dffe1, 0xd7e6ff, 0xff8a5c, 0x8ee9ff, 0x9ecbff, 0xffd2a1,
@@ -160,20 +174,26 @@ export function worldUvBox(width: number, height: number, depth: number, tile: n
   return geometry;
 }
 
+/** Base colours for the procedural floor and wall, taken from the lighting config. */
+export function labBaseColors(): { floor: number; wall: number } {
+  return { floor: LIGHTING.floorTint, wall: LIGHTING.wallTint };
+}
+
 export function createLabMaterials(): LabMaterials {
+  const base = labBaseColors();
   const floorTex = floorMap();
   const wallTex = wallMap();
   const metal = metalMap();
   const floor = new MeshStandardMaterial({
     map: floorTex,
     roughnessMap: roughness(0.72),
-    color: 0xffffff,
+    color: base.floor,
     metalness: 0.45,
     roughness: 0.72,
   });
   const wall = new MeshStandardMaterial({
     map: wallTex,
-    color: 0xffffff,
+    color: base.wall,
     metalness: 0.35,
     roughness: 0.8,
   });
@@ -211,8 +231,7 @@ export function createLabMaterials(): LabMaterials {
     nodeHot,
     shared: new Set(all),
     applyEnv(texture) {
-      for (const material of all) material.envMap = texture;
-      for (const material of all) material.needsUpdate = true;
+      setLabEnv(all, texture);
     },
     setAnisotropy(max) {
       const value = Math.min(8, Math.max(1, max));
@@ -230,7 +249,14 @@ export function createLabMaterials(): LabMaterials {
 
 export function buildEnvMap(renderer: WebGLRenderer): Texture {
   const pmrem = new PMREMGenerator(renderer);
-  const texture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const envScene = buildLabEnvScene();
+  const texture = pmrem.fromScene(envScene, 0.03).texture;
+  envScene.traverse((object) => {
+    const mesh = object as Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material.dispose();
+  });
   pmrem.dispose();
   return texture;
 }

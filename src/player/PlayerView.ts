@@ -82,7 +82,7 @@ export class PlayerView {
     const seam = new MeshStandardMaterial({
       color: 0x8ef6ff,
       emissive: 0x1a7f96,
-      emissiveIntensity: 0.85,
+      emissiveIntensity: 2.2,
       roughness: 0.4,
     });
     const visor = new MeshStandardMaterial({ color: 0x101820, metalness: 0.92, roughness: 0.08 });

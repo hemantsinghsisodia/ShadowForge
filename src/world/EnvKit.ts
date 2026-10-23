@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { LIGHTING } from './Lighting';
 
 /**
  * Kenney Modular Space Kit subset (public/models/environment/KenneyModularSpace.glb).
@@ -35,12 +36,29 @@ export interface KitPart {
   material: MeshStandardMaterial;
 }
 
-export interface EnvKit {
-  prototype(name: KitName): KitPart[] | null;
+export interface Kit<N extends string> {
+  prototype(name: N): KitPart[] | null;
   /** One geometry with a group per material, for meshes that need their own material copies. */
-  merged(name: KitName): { geometry: BufferGeometry; materials: MeshStandardMaterial[] } | null;
+  merged(name: N): { geometry: BufferGeometry; materials: MeshStandardMaterial[] } | null;
   /** Kit geometry and materials live for the whole session and must not be disposed with a level. */
   owns(resource: BufferGeometry | Material): boolean;
+  /** Every distinct kit material, for live re-tinting. */
+  allMaterials(): MeshStandardMaterial[];
+}
+
+export type EnvKit = Kit<KitName>;
+
+/**
+ * Scales the kit base colours (kept in userData.baseColor as a hex number, which survives Material.clone's
+ * JSON copy of userData). Emissive is left alone so glowing parts stay bright. Materials without a base colour are skipped.
+ */
+export function setKitScale(materials: Iterable<Material>, scale: number): void {
+  for (const material of materials) {
+    const base = material.userData.baseColor;
+    const color = (material as MeshStandardMaterial).color;
+    if (typeof base !== 'number' || !color) continue;
+    color.setHex(base).multiplyScalar(scale);
+  }
 }
 
 const URL = `${import.meta.env.BASE_URL}models/environment/KenneyModularSpace.glb`;
@@ -49,7 +67,7 @@ let ready: EnvKit | null = null;
 
 /** Loads the kit once; later calls share the same promise. Resolves null if the file is missing or unreadable. */
 export function loadEnvKit(): Promise<EnvKit | null> {
-  pending ??= fetchKit().then((kit) => (ready = kit));
+  pending ??= loadKit(URL, Object.values(KIT), undefined, 'EnvKit').then((kit) => (ready = kit));
   return pending;
 }
 
@@ -59,7 +77,7 @@ export function envKit(): EnvKit | null {
 }
 
 /** One InstancedMesh per material of the prototype, all sharing the same instance matrices. */
-export function instanceKit(kit: EnvKit, name: KitName, matrices: Matrix4[], shadows = true): Group | null {
+export function instanceKit<N extends string>(kit: Kit<N>, name: N, matrices: Matrix4[], shadows = true): Group | null {
   const parts = kit.prototype(name);
   if (!parts || matrices.length === 0) return null;
   const group = new Group();
@@ -76,17 +94,27 @@ export function instanceKit(kit: EnvKit, name: KitName, matrices: Matrix4[], sha
   return group;
 }
 
-async function fetchKit(): Promise<EnvKit | null> {
+/**
+ * Loads a GLB kit and exposes the named nodes as prototypes. Not cached: callers keep their own promise.
+ * `retint` runs on every freshly built standard material, after baseColor is recorded.
+ * Resolves null if the file is missing or unreadable.
+ */
+export async function loadKit<N extends string>(
+  url: string,
+  names: readonly N[],
+  retint?: (material: MeshStandardMaterial) => void,
+  label = 'EnvKit',
+): Promise<Kit<N> | null> {
   try {
-    const gltf = await new GLTFLoader().loadAsync(URL);
+    const gltf = await new GLTFLoader().loadAsync(url);
     gltf.scene.updateMatrixWorld(true);
     const materials = new Map<Material, MeshStandardMaterial>();
     const owned = new Set<BufferGeometry | Material>();
     const prototypes = new Map<string, KitPart[]>();
-    for (const name of Object.values(KIT)) {
+    for (const name of names) {
       const node = gltf.scene.getObjectByName(name);
       if (!node) {
-        console.warn(`[EnvKit] prototype ${name} missing from ${URL}`);
+        console.warn(`[${label}] prototype ${name} missing from ${url}`);
         continue;
       }
       const inverse = node.matrixWorld.clone().invert();
@@ -99,7 +127,7 @@ async function fetchKit(): Promise<EnvKit | null> {
         if (!local.equals(new Matrix4())) geometry.applyMatrix4(local);
         geometry.computeBoundingBox();
         geometry.computeBoundingSphere();
-        const material = standardOf(mesh.material as Material, materials);
+        const material = standardOf(mesh.material as Material, materials, retint);
         owned.add(geometry).add(material);
         parts.push({ geometry, material });
       });
@@ -118,21 +146,27 @@ async function fetchKit(): Promise<EnvKit | null> {
         return mergedCache.get(name) ?? null;
       },
       owns: (resource) => owned.has(resource),
+      allMaterials: () => [...new Set(materials.values())],
     };
   } catch (error) {
-    console.error(`[EnvKit] could not load ${URL}; keeping procedural environment visuals.`, error);
+    console.error(`[${label}] could not load ${url}; keeping procedural environment visuals.`, error);
     return null;
   }
 }
 
 /** Keeps the packed colormap. GLTFLoader may still build a physical material for extension flags. */
-function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>): MeshStandardMaterial {
+function standardOf(
+  source: Material,
+  cache: Map<Material, MeshStandardMaterial>,
+  retint?: (material: MeshStandardMaterial) => void,
+): MeshStandardMaterial {
   const hit = cache.get(source);
   if (hit) return hit;
   const src = source as MeshStandardMaterial;
+  const base = src.color.clone();
   const material = new MeshStandardMaterial({
     name: src.name,
-    color: src.color,
+    color: base.clone().multiplyScalar(LIGHTING.kitScale),
     map: src.map,
     metalness: src.metalness,
     roughness: src.roughness,
@@ -140,6 +174,8 @@ function standardOf(source: Material, cache: Map<Material, MeshStandardMaterial>
     emissiveIntensity: src.emissiveIntensity,
     side: src.side,
   });
+  material.userData.baseColor = base.getHex();
+  retint?.(material);
   source.dispose();
   cache.set(source, material);
   return material;

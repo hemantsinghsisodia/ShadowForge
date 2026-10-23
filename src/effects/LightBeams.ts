@@ -24,7 +24,7 @@ void main() {
 }
 `;
 
-const BEAM_FRAG = `
+export const BEAM_FRAG = `
 precision highp float;
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -34,11 +34,13 @@ uniform float strength;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - abs(dot(normalize(vNormal), viewDir)), 1.6);
-  float along = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.35, vUv.y);
+  float along = smoothstep(0.0, 0.2, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
   float dist = length(cameraPosition - vWorld);
   float nearFade = smoothstep(0.6, 2.4, dist);
   float alpha = fres * along * strength * 0.28 * nearFade;
   gl_FragColor = vec4(color, alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `;
 
@@ -57,7 +59,7 @@ function haloTexture(): CanvasTexture {
   return new CanvasTexture(canvas);
 }
 
-const haloMap = haloTexture();
+let haloMap: CanvasTexture | null = null;
 const down = new Vector3(0, -1, 0);
 
 export interface BeamView {
@@ -84,7 +86,7 @@ export function createBeam(color: Color): BeamView {
   cone.renderOrder = 1;
   const halo = new Sprite(
     new SpriteMaterial({
-      map: haloMap,
+      map: (haloMap ??= haloTexture()),
       color,
       transparent: true,
       depthWrite: false,

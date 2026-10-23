@@ -13,6 +13,7 @@ import {
   InstancedMesh,
   Line,
   LineBasicMaterial,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -34,10 +35,17 @@ import type { CasterVolume } from '../shadows/types';
 import { ForgeSurface } from '../shadows/ForgeSurface';
 import { maskToBoxes } from '../shadows/math';
 import type { ShadowManager } from '../shadows/ShadowManager';
-import { envKit, loadEnvKit, type EnvKit } from './EnvKit';
-import { buildDressing, buildKitFloor, type RoomBounds } from './LabDressing';
-import { SpaceBackdrop } from './SpaceBackdrop';
+import { envKit, loadEnvKit, setKitScale, type EnvKit } from './EnvKit';
+import { forgeKit, loadForgeKit } from './ForgeKit';
+import { ForgeCavern, MENU_BOUNDS } from './ForgeCavern';
+import { levelAtmosphere, moltenPulse } from './ForgePalette';
+import { LIGHTING, hemiIntensity, type LightingConfig } from './Lighting';
+import { levelBounds, sunShadowFrame } from './CavernLayout';
+import { buildDressing, buildForgeRims, buildKitFloor, tuckUnderTile, type RoomBounds } from './LabDressing';
+import { installHeightFog } from './HeightFog';
 import { accentFor, buildEnvMap, createLabMaterials, worldUvBox } from './Materials';
+
+installHeightFog();
 
 interface LampView {
   cfg: LightConfig;
@@ -73,10 +81,15 @@ export class LevelWorld {
   private exit: Mesh | null = null;
   private column: Mesh | null = null;
   private sun: DirectionalLight | null = null;
+  private hemi: HemisphereLight | null = null;
+  private underLight: DirectionalLight | null = null;
   private config: LevelConfig | null = null;
   private dressing: Group | null = null;
+  private rims: Group | null = null;
   private pillars: Mesh[] = [];
   private bounds: RoomBounds | null = null;
+  /** X range the sun's shadow camera covers; follows the level, restored by every `applyShadowSize`. */
+  private shadowFrame = { centreX: 0, halfX: 40 };
   private accent = new Color(0x5ce1ff);
   private beamsOn = true;
   private dressingDetail: 'low' | 'high' = 'high';
@@ -87,13 +100,13 @@ export class LevelWorld {
   private platformViews: Mesh[][] = [];
   private loadToken = 0;
   private dressingKit = false;
-  readonly backdrop = new SpaceBackdrop();
+  readonly cavern = new ForgeCavern();
   time = 0;
 
   constructor(private scene: Scene) {
     this.scene.add(this.root);
     this.scene.add(this.menu);
-    this.scene.add(this.backdrop.group);
+    this.scene.add(this.cavern.group, this.cavern.dome);
     this.root.add(this.guides, this.solidGroup);
     this.buildMenu();
   }
@@ -101,17 +114,24 @@ export class LevelWorld {
   showMenu(on: boolean): void {
     this.menu.visible = on;
     this.root.visible = !on;
+    if (on || !this.bounds) this.cavern.mount(MENU_BOUNDS, [], 0);
+    else this.cavern.mount(this.bounds, this.config?.platforms ?? [], this.config?.id ?? 0);
   }
 
   bindRenderer(renderer: WebGLRenderer): void {
     this.gl = renderer;
     lab.setAnisotropy(renderer.capabilities.getMaxAnisotropy());
     this.ensureEnv();
+    // Load the forge kit now so the menu has towers on first boot; load() calls it again (cached, idempotent).
+    void loadForgeKit().then((kit) => {
+      if (kit) this.cavern.setKit(kit);
+    });
   }
 
   applyProfile(profile: QualityProfile): void {
     const detailChanged = this.dressingDetail !== profile.dressingDetail;
     this.profile = profile;
+    if (this.hemi) this.hemi.intensity = hemiIntensity(profile.envMap);
     this.beamsOn = profile.beams;
     this.dressingDetail = profile.dressingDetail;
     if (profile.envMap) {
@@ -119,14 +139,58 @@ export class LevelWorld {
       if (this.env) {
         lab.applyEnv(this.env);
         this.scene.environment = this.env;
-        this.scene.environmentIntensity = 0.28;
+        this.scene.environmentIntensity = LIGHTING.env;
       }
     } else {
       this.scene.environment = null;
       lab.applyEnv(null);
     }
-    if (detailChanged && this.bounds) this.mountDressing();
-    this.backdrop.setDetail(profile.sky);
+    if (detailChanged && this.bounds) {
+      this.mountDressing();
+      this.mountRims();
+    }
+    this.cavern.setDetail(profile.cavern, profile.embers);
+  }
+
+  /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
+  applyLighting(partial: Partial<LightingConfig>): void {
+    const target = LIGHTING as unknown as Record<string, number>;
+    for (const [key, value] of Object.entries(partial)) {
+      if (typeof value === 'number' && Number.isFinite(value)) target[key] = value;
+    }
+    if (this.sun) {
+      this.sun.intensity = LIGHTING.sun;
+      this.sun.color.setHex(LIGHTING.sunColor);
+    }
+    if (this.hemi) {
+      this.hemi.intensity = hemiIntensity(this.profile?.envMap ?? true);
+      this.hemi.groundColor.setHex(LIGHTING.hemiGround);
+    }
+    if (this.underLight) {
+      this.underLight.color.setHex(LIGHTING.underColor);
+      this.underLight.intensity = LIGHTING.under * moltenPulse(this.time);
+    }
+    const envOn = this.env !== null && this.scene.environment === this.env;
+    if (envOn) this.scene.environmentIntensity = LIGHTING.env;
+    lab.floor.color.setHex(LIGHTING.floorTint);
+    lab.wall.color.setHex(LIGHTING.wallTint);
+    const kitMaterials = new Set<Material>(envKit()?.allMaterials());
+    for (const material of forgeKit()?.allMaterials() ?? []) kitMaterials.add(material);
+    this.root.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) return;
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        if (typeof material.userData.baseColor === 'number') kitMaterials.add(material);
+        // Lab materials and their clones (pillar stone) carry the env map with a per-material intensity.
+        const standard = material as MeshStandardMaterial;
+        if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
+      }
+    });
+    for (const material of lab.shared) {
+      const standard = material as MeshStandardMaterial;
+      if (envOn && standard.envMap === this.env) standard.envMapIntensity = LIGHTING.env;
+    }
+    setKitScale(kitMaterials, LIGHTING.kitScale);
   }
 
   pulseForge(id: string): void {
@@ -137,21 +201,19 @@ export class LevelWorld {
     this.clearLevel();
     this.config = config;
     this.accent = accentFor(config.id);
-    const fog = new Color(0x07080e).lerp(this.accent, 0.16);
-    this.scene.background = fog;
-    this.scene.fog = new FogExp2(fog, config.id >= 8 ? 0.016 : 0.028);
-    this.backdrop.setTint(this.accent, fog);
-    const hemi = new HemisphereLight(0xb7c6dc, 0x243044, 2.1);
-    this.root.add(hemi);
-    this.sun = new DirectionalLight(0xe7eef8, 4.5);
-    this.sun.position.set(-12, 22, 8);
+    const atmosphere = levelAtmosphere(config.id);
+    this.scene.background = new Color(atmosphere.background);
+    this.scene.fog = new FogExp2(atmosphere.fog, atmosphere.density);
+    this.hemi = new HemisphereLight(0xb7c6dc, LIGHTING.hemiGround, hemiIntensity(this.profile?.envMap ?? true));
+    this.root.add(this.hemi);
+    this.sun = new DirectionalLight(LIGHTING.sunColor, LIGHTING.sun);
+    this.bounds = levelBounds(config.platforms);
+    this.shadowFrame = sunShadowFrame(this.bounds);
+    this.sun.position.set(-12 + this.shadowFrame.centreX, 22, 8);
+    this.sun.target.position.set(this.shadowFrame.centreX, 0, 0);
     this.applyShadowSize(shadowMapSize);
     this.root.add(this.sun, this.sun.target);
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
     for (const platform of config.platforms) {
       const mesh = new Mesh(worldUvBox(platform.size[0], platform.size[1], platform.size[2], 2), floorMat);
       mesh.position.set(platform.position[0], platform.position[1], platform.position[2]);
@@ -167,14 +229,27 @@ export class LevelWorld {
         views.push(strip);
       }
       this.platformViews.push(views);
-      minX = Math.min(minX, platform.position[0] - platform.size[0] / 2);
-      maxX = Math.max(maxX, platform.position[0] + platform.size[0] / 2);
-      minZ = Math.min(minZ, platform.position[2] - platform.size[2] / 2);
-      maxZ = Math.max(maxZ, platform.position[2] + platform.size[2] / 2);
     }
-    this.bounds = { minX, maxX, minZ, maxZ };
+    const { minX, maxX } = this.bounds;
+    this.cavern.mount(this.bounds, config.platforms, config.id);
+    const midX = (minX + maxX) / 2;
+    this.underLight = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
+    this.underLight.position.set(midX + 3, -12, 4);
+    this.underLight.target.position.set(midX, 0, 0);
+    this.underLight.castShadow = false;
+    this.root.add(this.underLight, this.underLight.target);
     this.mountDressing();
     const token = ++this.loadToken;
+    const forge = forgeKit();
+    if (forge) {
+      this.cavern.setKit(forge);
+      this.mountRims();
+    } else
+      void loadForgeKit().then((loaded) => {
+        if (!loaded) return;
+        this.cavern.setKit(loaded);
+        if (token === this.loadToken) this.mountRims();
+      });
     const kit = envKit();
     if (kit) this.applyKit(kit);
     else
@@ -205,7 +280,7 @@ export class LevelWorld {
     }
     const ring = new Mesh(
       new TorusGeometry(config.exit.radius, 0.055, 8, 28),
-      new MeshStandardMaterial({ color: 0xb6fff2, emissive: 0x3ee0c8, emissiveIntensity: 1.1, roughness: 0.25 }),
+      new MeshStandardMaterial({ color: 0xb6fff2, emissive: 0x3ee0c8, emissiveIntensity: 2.6, roughness: 0.25 }),
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.set(config.exit.position[0], config.exit.position[1] + 0.08, config.exit.position[2]);
@@ -239,7 +314,7 @@ export class LevelWorld {
       view.light.intensity = volume.enabled ? cfg.intensity * (cfg.type === 'spotlight' ? 40 : 55) : 0;
       view.light.distance = volume.range;
       const headMat = view.head.material as MeshBasicMaterial;
-      headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 1.4 : 0.12);
+      headMat.color.set(cfg.color).multiplyScalar(volume.enabled ? 4.0 : 0.12);
       const dir =
         view.target && volume.spot
           ? new Vector3(volume.spot.dx, volume.spot.dy, volume.spot.dz)
@@ -308,8 +383,8 @@ export class LevelWorld {
     const cam = this.sun.shadow.camera;
     cam.near = 1;
     cam.far = 80;
-    cam.left = -40;
-    cam.right = 40;
+    cam.left = -this.shadowFrame.halfX;
+    cam.right = this.shadowFrame.halfX;
     cam.top = 40;
     cam.bottom = -40;
     cam.updateProjectionMatrix();
@@ -317,7 +392,8 @@ export class LevelWorld {
 
   update(dt: number, px = 0, pz = 0): void {
     this.time += dt;
-    this.backdrop.update(dt);
+    this.cavern.update(this.time);
+    if (this.underLight) this.underLight.intensity = LIGHTING.under * moltenPulse(this.time);
     if (this.exit) this.exit.rotation.z = this.time * 0.6;
     if (this.column) {
       const mat = this.column.material as MeshBasicMaterial;
@@ -404,6 +480,8 @@ export class LevelWorld {
     this.exit = null;
     this.column = null;
     this.sun = null;
+    this.hemi = null;
+    this.underLight = null;
     this.bounds = null;
     this.pillars = [];
     this.platformViews = [];
@@ -412,6 +490,7 @@ export class LevelWorld {
       disposeObject(this.dressing);
       this.dressing = null;
     }
+    this.clearRims();
     for (const child of [...this.root.children]) {
       if (child === this.guides || child === this.solidGroup) continue;
       this.root.remove(child);
@@ -421,7 +500,7 @@ export class LevelWorld {
 
   /**
    * Swaps the procedural floor visuals for kit tiles once the kit is available. The procedural
-   * boxes stay in place (hidden) and collision never reads either, so a failure leaves the level as it was.
+   * boxes stay in place (tucked under the kit tile) and collision never reads either, so a failure leaves the level as it was.
    */
   private applyKit(kit: EnvKit): void {
     if (!this.config) return;
@@ -429,7 +508,17 @@ export class LevelWorld {
       const floor = buildKitFloor(kit, this.config.platforms);
       if (floor) {
         this.root.add(floor.group);
-        for (const index of floor.covered) for (const view of this.platformViews[index] ?? []) view.visible = false;
+        for (const index of floor.covered) {
+          const [slab, ...trim] = this.platformViews[index] ?? [];
+          const platform = this.config.platforms[index];
+          // The slab stays visible so its sides read as thickness under the kit tile; trim strips would poke through.
+          if (slab && platform) {
+            const { scaleY, offsetY } = tuckUnderTile(platform.size[1]);
+            slab.scale.y = scaleY;
+            slab.position.y = platform.position[1] + offsetY;
+          }
+          for (const view of trim) view.visible = false;
+        }
       }
       if (!this.dressingKit) this.mountDressing();
     } catch (error) {
@@ -458,7 +547,7 @@ export class LevelWorld {
       light = spot;
       beam = new Mesh(
         new ConeGeometry(0.16, 0.5, 10),
-        new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(1.4) }),
+        new MeshBasicMaterial({ color: lampColor.clone().multiplyScalar(4.2) }),
       );
       group.add(beam);
     } else {
@@ -530,7 +619,7 @@ export class LevelWorld {
     ring.position.y = 1.14;
     const icon = new Mesh(
       new BoxGeometry(0.08, 0.08, 0.02),
-      new MeshStandardMaterial({ color: 0x9af6ff, emissive: 0x39e7ff, emissiveIntensity: 1.6, roughness: 0.25 }),
+      new MeshStandardMaterial({ color: 0x9af6ff, emissive: 0x39e7ff, emissiveIntensity: 3.0, roughness: 0.25 }),
     );
     icon.position.y = 1.14;
     group.add(base, button, ring, icon);
@@ -552,7 +641,7 @@ export class LevelWorld {
     this.env = buildEnvMap(this.gl);
     lab.applyEnv(this.env);
     this.scene.environment = this.env;
-    this.scene.environmentIntensity = 0.28;
+    this.scene.environmentIntensity = LIGHTING.env;
   }
 
   private mountDressing(): void {
@@ -565,11 +654,32 @@ export class LevelWorld {
     if (!this.bounds || !Number.isFinite(this.bounds.minX)) return;
     const kit = envKit();
     this.dressingKit = kit !== null;
-    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, this.accent, kit, this.config);
+    this.dressing = buildDressing(this.bounds, this.dressingDetail, lab, kit, this.config);
     this.root.add(this.dressing);
     this.dressing.traverse((child) => {
       if (child.userData.pillar) this.pillars.push(child as Mesh);
     });
+  }
+
+  /** Slab-edge lips with accent-tinted trim: high dressing detail and a loaded forge kit only. Rebuilt on detail and kit changes. */
+  private mountRims(): void {
+    this.clearRims();
+    const forge = forgeKit();
+    if (!this.config || !forge || this.dressingDetail !== 'high') return;
+    try {
+      this.rims = buildForgeRims(forge, this.config.platforms, this.accent);
+    } catch (error) {
+      console.error('[ForgeKit] failed to build the slab rims; leaving the slab edges bare.', error);
+    }
+    if (this.rims) this.root.add(this.rims);
+  }
+
+  /** Disposes the merged rim geometry and the per-level trim clone; the kit's own resources are skipped. */
+  private clearRims(): void {
+    if (!this.rims) return;
+    this.root.remove(this.rims);
+    disposeObject(this.rims);
+    this.rims = null;
   }
 
   /** Hide a pillar that sits between the camera and the player, so it cannot fill the screen. */
@@ -626,7 +736,10 @@ export class LevelWorld {
     const glow = createBeam(new Color(0xffb15a));
     rig.add(lamp, light, glow.cone, glow.halo);
     aimBeam(glow, new Vector3(3.15, -2.35, -0.35), 3.8, 1);
-    this.menu.add(floor, monument, plate, rig);
+    const underglow = new DirectionalLight(LIGHTING.underColor, LIGHTING.under);
+    underglow.position.set(3, -12, 4);
+    underglow.castShadow = false;
+    this.menu.add(floor, monument, plate, rig, underglow);
     this.menu.position.set(0, 0.15, 0);
   }
 }
@@ -637,14 +750,16 @@ function railLine(points: Vector3[]): Line {
 
 function disposeObject(object: Object3D): void {
   const kit = envKit();
+  const forge = forgeKit();
+  const owned = (resource: BufferGeometry | Material) => kit?.owns(resource) || forge?.owns(resource);
   object.traverse((child: Object3D) => {
     const mesh = child as Mesh;
     if ((mesh as InstancedMesh).isInstancedMesh) (mesh as InstancedMesh).dispose();
-    if (mesh.geometry && !kit?.owns(mesh.geometry)) mesh.geometry.dispose();
+    if (mesh.geometry && !owned(mesh.geometry)) mesh.geometry.dispose();
     const material = mesh.material;
     const list = Array.isArray(material) ? material : material ? [material] : [];
     for (const entry of list) {
-      if (!sharedMaterials.has(entry) && !kit?.owns(entry)) entry.dispose();
+      if (!sharedMaterials.has(entry) && !owned(entry)) entry.dispose();
     }
   });
 }

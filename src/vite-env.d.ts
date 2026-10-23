@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+import type { CAVERN } from './world/ForgePalette';
+import type { LightingConfig } from './world/Lighting';
+
 interface ShadowforgeDebug {
   jump: (level: number) => void;
   begin: () => void;
@@ -11,6 +14,9 @@ interface ShadowforgeDebug {
   boxes: () => unknown;
   fps: () => number;
   post: (mode: 'off' | 'bloom' | 'grade' | 'full') => void;
+  light: (p: Partial<LightingConfig>) => LightingConfig;
+  cavern: (p?: Partial<typeof CAVERN>) => typeof CAVERN;
+  bloom: (strength: number, radius: number, threshold: number) => void;
 }
 
 declare global {

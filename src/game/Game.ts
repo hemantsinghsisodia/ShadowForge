@@ -16,9 +16,11 @@ import { CharacterBody } from '../physics/CharacterBody';
 import { CameraRig } from '../player/CameraRig';
 import { PlayerView } from '../player/PlayerView';
 import { SaveManager } from '../save/SaveManager';
-import { initialAppliedQuality, profileFor, type AppliedQuality, type Settings } from '../settings/Settings';
+import { initialAppliedQuality, profileFor, type AppliedQuality, type QualityMode, type Settings } from '../settings/Settings';
 import { ShadowManager } from '../shadows/ShadowManager';
 import { Ui, formatTime, type HudState } from '../ui/Ui';
+import { FORGE, MENU_FOG_DENSITY, cavernFog } from '../world/ForgePalette';
+import { LIGHTING } from '../world/Lighting';
 import { LevelWorld } from '../world/LevelWorld';
 
 const raycaster = new Raycaster();
@@ -41,6 +43,7 @@ export class Game {
   private readonly manip = new ManipulationMode();
   private readonly debug: boolean;
   private tier: AppliedQuality;
+  private appliedMode: QualityMode | null = null;
   private config: LevelConfig | null = null;
   private shadows: ShadowManager | null = null;
   private body = new CharacterBody();
@@ -91,8 +94,8 @@ export class Game {
     this.audio.onCaption = (text) => this.ui.caption(text);
     this.applySettings();
     this.player.group.visible = false;
-    this.scene.background = new Color(0x07080e);
-    this.scene.fog = new FogExp2(0x07080e, 0.08);
+    this.scene.background = new Color(FORGE.top);
+    this.scene.fog = new FogExp2(cavernFog(), MENU_FOG_DENSITY);
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('error', (event) => this.ui.error(event.message || 'Something went wrong'));
     window.addEventListener('unhandledrejection', (event) => {
@@ -120,6 +123,11 @@ export class Game {
               resolve(window.__SF?.pos());
             }, ms);
           }),
+        cavern: (p) => this.world.cavern.tune(p ?? {}),
+        light: (p) => {
+          this.world.applyLighting(p);
+          return { ...LIGHTING };
+        },
         boxes: () =>
           (this.shadows?.collisionBoxes() ?? []).map((box) => ({
             minX: Number(box.minX.toFixed(2)),
@@ -139,6 +147,8 @@ export class Game {
             this.camera.camera,
           );
         },
+        bloom: (strength: number, radius: number, threshold: number) =>
+          this.renderer.tuneBloom(strength, radius, threshold),
       };
     }
     if (!localStorage.getItem('shadowforge-tutorial')) {
@@ -165,7 +175,7 @@ export class Game {
     if (portrait && (this.state.name === 'PLAYING' || this.state.name === 'SHADOW_TRANSITION')) {
       this.rotateLock = true;
       this.input.sample();
-      this.world.backdrop.follow(this.camera.camera.position);
+      this.world.cavern.follow(this.camera.camera.position);
       this.renderer.render(this.scene, this.camera.camera);
       return;
     }
@@ -179,13 +189,15 @@ export class Game {
     if (mode === 'PAUSED' || mode === 'LEVEL_COMPLETE' || mode === 'GAME_COMPLETE') {
       this.world.update(0);
     }
-    const dropped = this.monitor.update(dt, this.tier, this.save.data.settings.quality);
-    if (dropped) {
-      this.tier = dropped;
+    const changed = this.monitor.update(dt, this.tier, this.save.data.settings.quality);
+    if (changed) {
+      const tiers: AppliedQuality[] = ['low', 'medium', 'high'];
+      const raised = tiers.indexOf(changed) > tiers.indexOf(this.tier);
+      this.tier = changed;
       this.applyTier();
-      this.ui.caption(`Graphics lowered to ${dropped}`);
+      this.ui.caption(`Graphics ${raised ? 'raised' : 'lowered'} to ${changed}`);
     }
-    this.world.backdrop.follow(this.camera.camera.position);
+    this.world.cavern.follow(this.camera.camera.position);
     this.renderer.render(this.scene, this.camera.camera);
   }
 
@@ -608,9 +620,8 @@ export class Game {
     this.releasePointer();
     this.world.showMenu(true);
     this.player.group.visible = false;
-    this.scene.background = new Color(0x07080e);
-    this.scene.fog = new FogExp2(0x07080e, 0.08);
-    this.world.backdrop.setTint(new Color(0x9eb6ff), new Color(0x07080e));
+    this.scene.background = new Color(FORGE.top);
+    this.scene.fog = new FogExp2(cavernFog(), MENU_FOG_DENSITY);
     this.state.set('MENU');
     this.ui.show('menu');
   }
@@ -662,8 +673,12 @@ export class Game {
     this.haptics.enabled = settings.haptics;
     this.camera.sensitivity = settings.cameraSensitivity;
     this.camera.invertY = settings.invertY;
-    this.tier = initialAppliedQuality(settings.quality, isCoarsePointer());
-    this.applyTier();
+    if (this.appliedMode !== settings.quality) {
+      // Only a first call or a changed quality mode resets the tier; other settings must not undo an AUTO step-down.
+      this.appliedMode = settings.quality;
+      this.tier = initialAppliedQuality(settings.quality, isCoarsePointer());
+      this.applyTier();
+    }
     this.ui.setTouch(isCoarsePointer());
   }
 
@@ -676,6 +691,8 @@ export class Game {
     this.world.applyShadowSize(profile.shadowMapSize);
     this.particles.setBudget(profile.particles);
     this.particles.setDust(profile.dust);
+    this.particles.setPixelRatio(this.renderer.effectivePixelRatio());
+    this.world.cavern.setPixelRatio(this.renderer.effectivePixelRatio());
     this.player.setLamp(profile.playerLight);
     this.resize();
   }

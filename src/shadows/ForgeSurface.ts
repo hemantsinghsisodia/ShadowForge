@@ -22,7 +22,7 @@ void main() {
 }
 `;
 
-const FRAG = `
+export const FORGE_FRAG = `
 precision highp float;
 uniform sampler2D maskMap;
 uniform vec2 cells;
@@ -59,21 +59,23 @@ void main() {
   float scan = 0.55 + 0.45 * sin(cell.y * 3.1 - time * 4.0);
   float ripple = 0.5 + 0.5 * sin(vUv.x * 18.0 - time * 2.2 + flow);
   float age = time - wave;
-  float ring = wave > 0.0 ? smoothstep(0.45, 0.0, abs(length(vUv - 0.5) * 2.2 - age * 1.6)) : 0.0;
+  float ring = wave > 0.0 ? (1.0 - smoothstep(0.0, 0.45, abs(length(vUv - 0.5) * 2.2 - age * 1.6))) : 0.0;
   float dissolve = hash(floor(cell * 2.0));
-  float broken = solid * smoothstep(stab + 0.05, stab - 0.15, dissolve);
+  float broken = solid * (1.0 - smoothstep(stab - 0.15, stab + 0.05, dissolve));
   vec3 base = vec3(0.012, 0.025, 0.04);
-  vec3 previewCol = color * (0.12 + 0.28 * scan * ripple) + color * pedge * 1.8 + color * flow * 0.08;
+  vec3 previewCol = color * (0.12 + 0.28 * scan * ripple) + color * pedge * 2.6 + color * flow * 0.08;
   vec3 hot = mix(vec3(1.0, 0.22, 0.12), color, clamp(stab, 0.0, 1.0));
-  vec3 solidCol = hot * (0.55 + 0.35 * ripple) + color * sedge * 1.6;
-  solidCol += vec3(1.0, 0.25, 0.15) * broken * 1.4;
+  vec3 solidCol = hot * (0.55 + 0.35 * ripple) + color * sedge * 3.2;
+  solidCol += vec3(1.0, 0.25, 0.15) * broken * 2.5;
   vec3 col = base + grid * vec3(0.05, 0.09, 0.12);
   col = mix(col, previewCol, clamp(preview * (1.0 - solid), 0.0, 1.0));
   col = mix(col, solidCol, solid * (1.0 - broken * 0.65));
-  col += color * ring * 1.5;
+  col += color * ring * 3.0;
   float alpha = 0.18 + preview * 0.45 + solid * 0.82 + pedge * 0.4 + grid * 0.1 + ring * 0.5;
   alpha *= mix(1.0, 0.25, broken);
   gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `;
 
@@ -128,7 +130,7 @@ export class ForgeSurface {
         color: { value: new Vector3(0.35, 0.88, 1) },
       },
       vertexShader: VERT,
-      fragmentShader: FRAG,
+      fragmentShader: FORGE_FRAG,
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
