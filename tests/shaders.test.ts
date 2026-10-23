@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FORGE_FRAG } from '../src/shadows/ForgeSurface';
-import { OBSIDIAN_FRAG } from '../src/effects/Obsidian';
+import { OBSIDIAN_FRAG, OBSIDIAN_VERT } from '../src/effects/Obsidian';
 import { BEAM_FRAG } from '../src/effects/LightBeams';
 import { EMBER_FRAG, EMBER_VERT } from '../src/effects/Embers';
 import { SPARK_FRAG, SPARK_VERT } from '../src/effects/Sparks';
@@ -38,6 +38,10 @@ describe('emissive shader strengths use the specified HDR boosts', () => {
 
   it('obsidian rim is boosted', () => {
     expect(OBSIDIAN_FRAG).toContain('fres * 1.8');
+  });
+
+  it('obsidian leading edge and collapse heat are boosted', () => {
+    expect(OBSIDIAN_FRAG).toContain('smoothstep(0.75, 1.0, vK) * (1.0 - rise) * 3.0 + hot * 2.5');
   });
 });
 
@@ -82,7 +86,7 @@ describe('rock wall shader', () => {
 describe('smoothstep edges', () => {
   it('never reverses numeric-literal edges in any shader', () => {
     const call = /smoothstep\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,/g;
-    const all = [...SHADERS, ['EMBER_VERT', EMBER_VERT], ['EMBER_FRAG', EMBER_FRAG], ['SPARK_VERT', SPARK_VERT], ['PARTICLE_FRAG', PARTICLE_FRAG]];
+    const all = [...SHADERS, ['OBSIDIAN_VERT', OBSIDIAN_VERT], ['EMBER_VERT', EMBER_VERT], ['EMBER_FRAG', EMBER_FRAG], ['SPARK_VERT', SPARK_VERT], ['PARTICLE_FRAG', PARTICLE_FRAG]];
     for (const [, frag] of all) {
       for (const m of frag.matchAll(call)) expect(Number(m[1])).toBeLessThan(Number(m[2]));
     }

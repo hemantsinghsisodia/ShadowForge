@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   PointLight,
+  ShaderMaterial,
   SpotLight,
   TorusGeometry,
   Vector3,
@@ -27,7 +28,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { aimBeam, createBeam, type BeamView } from '../effects/LightBeams';
-import { createObsidianMaterial } from '../effects/Obsidian';
+import { buildObsidianMesh, createObsidianMaterial, stepSolid, type SolidMode } from '../effects/Obsidian';
 import { resolveCaster, resolveLight, surfaceDef } from '../levels/evaluate';
 import type { CasterConfig, EntityState, LevelConfig, LightConfig } from '../levels/LevelData';
 import type { QualityProfile } from '../settings/Settings';
@@ -56,6 +57,15 @@ interface LampView {
   glow: BeamView;
   light: PointLight | SpotLight;
   target: Object3D | null;
+}
+
+/** One surface's obsidian: a single instanced mesh plus its rise / idle / collapse clock. */
+interface SolidView {
+  key: string;
+  mesh: InstancedMesh;
+  material: ShaderMaterial;
+  mode: SolidMode;
+  t: number;
 }
 
 const lab = createLabMaterials();
@@ -96,7 +106,10 @@ export class LevelWorld {
   private gl: WebGLRenderer | null = null;
   private env: Texture | null = null;
   private profile: QualityProfile | null = null;
-  private solidLayout = '';
+  private readonly solidViews = new Map<string, SolidView>();
+  private solidDt = 0;
+  private readonly risePending = new Set<string>();
+  private readonly collapsePending = new Set<string>();
   private platformViews: Mesh[][] = [];
   private loadToken = 0;
   private dressingKit = false;
@@ -150,6 +163,16 @@ export class LevelWorld {
       this.mountRims();
     }
     this.cavern.setDetail(profile.cavern, profile.embers);
+  }
+
+  /** Marks `surfaceId` so the next `sync` raises its new obsidian out of the plate instead of popping it in. */
+  beginRise(surfaceId: string): void {
+    this.risePending.add(surfaceId);
+  }
+
+  /** Marks `surfaceId` so the next `sync` recedes its obsidian, glowing hot, instead of removing it at once. */
+  beginCollapse(surfaceId: string): void {
+    this.collapsePending.add(surfaceId);
   }
 
   /** Live tuning hook (__SF.light): merges into LIGHTING and pushes the values to every live light and material. */
@@ -411,62 +434,67 @@ export class LevelWorld {
     }
     this.menu.rotation.y = Math.sin(this.time * 0.15) * 0.18;
     for (const forge of this.forges) forge.setTime(this.time);
+    this.solidDt = dt;
+    this.solidViews.forEach(this.tickSolid);
   }
 
+  /** Bound once so the per-frame `forEach` allocates nothing. */
+  private readonly tickSolid = (view: SolidView, id: string): void => {
+    if (view.mode === 'idle') return;
+    const step = stepSolid(view, this.solidDt);
+    view.material.uniforms.rise.value = step.rise;
+    view.material.uniforms.hot.value = step.hot;
+    if (step.done) this.removeSolid(id, view);
+  };
+
   private rebuildSolid(shadows: ShadowManager): void {
-    const chunks: string[] = [];
-    const stabs = new Map<string, number>();
-    for (const [id, frozen] of shadows.solid) {
-      const stab = shadows.stability.get(id);
-      if (!stab?.forged) continue;
-      chunks.push(`${id}:${frozen.join('')}`);
-      stabs.set(id, stab.value);
-    }
-    const layout = chunks.join('|');
-    if (layout === this.solidLayout) {
-      for (const child of this.solidGroup.children) {
-        const mesh = child as Mesh;
-        const material = mesh.material as { uniforms?: { stab?: { value: number } } };
-        const value = stabs.get(mesh.userData.surfaceId as string);
-        if (value !== undefined && material.uniforms?.stab) material.uniforms.stab.value = value;
-      }
-      return;
-    }
-    this.solidLayout = layout;
-    for (const child of [...this.solidGroup.children]) {
-      this.solidGroup.remove(child);
-      const mesh = child as Mesh;
-      mesh.geometry.dispose();
-      const material = mesh.material;
-      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
-    }
     for (const [id, frozen] of shadows.solid) {
       const def = shadows.defs.get(id);
       const stab = shadows.stability.get(id);
-      if (!def || !stab?.forged) continue;
-      for (const box of maskToBoxes(def, frozen)) {
-        const width = Math.max(0.05, box.maxX - box.minX);
-        const height = Math.max(0.08, box.maxY - box.minY);
-        const depth = Math.max(0.05, box.maxZ - box.minZ);
-        const mesh = new Mesh(new BoxGeometry(width, height, depth), createObsidianMaterial(stab.value, this.accent));
-        mesh.position.set((box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2, (box.minZ + box.maxZ) / 2);
-        mesh.userData.surfaceId = id;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        this.solidGroup.add(mesh);
+      const view = this.solidViews.get(id);
+      if (!def || !stab?.forged) {
+        // Collapsing views live on until they finish; anything else goes now, or starts collapsing if marked.
+        if (view && view.mode !== 'collapse') {
+          if (this.collapsePending.has(id)) {
+            view.mode = 'collapse';
+            view.t = 0;
+            view.material.uniforms.hot.value = 1;
+          } else this.removeSolid(id, view);
+        }
+        continue;
       }
+      const key = `${frozen.join('')}:forged`;
+      if (view && view.mode !== 'collapse' && view.key === key) {
+        view.material.uniforms.stab.value = stab.value;
+        continue;
+      }
+      if (view) this.removeSolid(id, view);
+      const boxes = maskToBoxes(def, frozen);
+      if (boxes.length === 0) continue;
+      const rising = this.risePending.has(id);
+      const material = createObsidianMaterial(stab.value, this.accent);
+      material.uniforms.rise.value = rising ? 0 : 1;
+      const mesh = buildObsidianMesh(boxes, material);
+      this.solidGroup.add(mesh);
+      this.solidViews.set(id, { key, mesh, material, mode: rising ? 'rise' : 'idle', t: 0 });
     }
+    this.risePending.clear();
+    this.collapsePending.clear();
+  }
+
+  private removeSolid(id: string, view: SolidView): void {
+    this.solidViews.delete(id);
+    this.solidGroup.remove(view.mesh);
+    view.mesh.geometry.dispose();
+    view.mesh.dispose();
+    view.material.dispose();
   }
 
   private clearLevel(): void {
     this.hideGuides();
-    for (const child of [...this.solidGroup.children]) {
-      this.solidGroup.remove(child);
-      const mesh = child as Mesh;
-      mesh.geometry.dispose();
-      const material = mesh.material;
-      if (material && !Array.isArray(material) && !sharedMaterials.has(material)) material.dispose();
-    }
+    for (const [id, view] of [...this.solidViews]) this.removeSolid(id, view);
+    this.risePending.clear();
+    this.collapsePending.clear();
     for (const forge of this.forges) {
       this.root.remove(forge.mesh);
       forge.dispose();
@@ -476,7 +504,6 @@ export class LevelWorld {
     this.lamps.clear();
     this.casterGroups.clear();
     this.casterKeys.clear();
-    this.solidLayout = '';
     this.exit = null;
     this.column = null;
     this.sun = null;
